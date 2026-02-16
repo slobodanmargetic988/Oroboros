@@ -12,6 +12,11 @@ This deployment flow is host-only and container-free.
 ./scripts/deploy.sh <commit_sha>
 ```
 
+Rollback command:
+```bash
+./scripts/rollback.sh <release_id>
+```
+
 ## What `deploy.sh` does
 1. Validates the commit exists in the source repo.
 2. Creates a release directory for the commit if it does not already exist.
@@ -23,6 +28,26 @@ This deployment flow is host-only and container-free.
 5. Restarts systemd services for api/worker/web/caddy.
 6. Runs post-deploy health gate (`scripts/runtime-health-check.sh` from `current`).
 7. If health gate fails, restores previous `current` symlink and restarts services.
+8. Persists release metadata updates in control-plane `releases` table.
+
+## What `rollback.sh` does
+1. Validates target release directory exists at `/srv/oroboros/releases/<release_id>`.
+2. Persists rollback-in-progress state to release registry.
+3. Atomically switches `/srv/oroboros/current` to target release.
+4. Restarts host services (unless skipped).
+5. Runs health gate from active `current` release.
+6. If health check fails, restores previous symlink target, restarts services, records rollback failure, and exits non-zero.
+7. On success, records rollback success in release registry.
+
+## Release Registry Integration
+Release metadata is persisted in control-plane DB table `releases` through:
+- `scripts/release-registry.sh upsert ...`
+- `scripts/release-registry.sh list`
+- `scripts/release-registry.sh get --release-id <release_id>`
+
+API query surface:
+- `GET /api/releases`
+- `GET /api/releases/{release_id}`
 
 ## Runtime Path Contract
 systemd services execute from `/srv/oroboros/current/*` so symlink switch changes active code without in-place mutations:

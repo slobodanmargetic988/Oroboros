@@ -40,6 +40,11 @@ Preview slot-only health checks:
 ./scripts/preview-slots-health-check.sh
 ```
 
+Query release registry records:
+```bash
+./scripts/release-registry.sh list --limit 20
+```
+
 Allocate one preview slot for a run (includes DB reset + seed flow):
 ```bash
 ./scripts/preview-slot-allocate.sh --run-id <run_id> --seed-version v1 --strategy seed

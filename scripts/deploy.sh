@@ -13,6 +13,7 @@ Environment overrides:
   DEPLOY_SKIP_SERVICE_RESTART  Set to 1 to skip systemd restart
   DEPLOY_SKIP_HEALTHCHECK      Set to 1 to skip health gate
   DEPLOY_HEALTHCHECK_CMD       Override health check command
+  DEPLOY_REGISTRY_CMD          Override release registry command
   DEPLOY_SERVICES              Space-separated systemd units to restart
 
 Host-only deployment only. No Docker/Compose/Kubernetes usage.
@@ -57,7 +58,49 @@ RELEASE_METADATA_FILE="${RELEASE_DIR}/.deploy-meta"
 SERVICES_DEFAULT="ouroboros-api ouroboros-worker ouroboros-web@main ouroboros-web@preview1 ouroboros-web@preview2 ouroboros-web@preview3 ouroboros-caddy"
 DEPLOY_SERVICES="${DEPLOY_SERVICES:-${SERVICES_DEFAULT}}"
 DEPLOY_HEALTHCHECK_CMD="${DEPLOY_HEALTHCHECK_CMD:-${DEPLOY_CURRENT_LINK}/scripts/runtime-health-check.sh}"
+DEPLOY_REGISTRY_CMD="${DEPLOY_REGISTRY_CMD:-${SCRIPT_DIR}/release-registry.sh}"
 PREVIOUS_TARGET=""
+PREVIOUS_RELEASE_ID=""
+PREVIOUS_RELEASE_COMMIT=""
+
+read_meta_value() {
+  local file="$1"
+  local key="$2"
+  [[ -f "${file}" ]] || return 0
+  sed -n "s/^${key}=//p" "${file}" | head -n 1
+}
+
+registry_upsert() {
+  local release_id="$1"
+  local commit_sha="$2"
+  local status="$3"
+  local marker="${4:-}"
+
+  if [[ "${DEPLOY_SKIP_REGISTRY_UPDATE:-0}" == "1" ]]; then
+    log "Skipping release registry update (DEPLOY_SKIP_REGISTRY_UPDATE=1)"
+    return
+  fi
+
+  if [[ ! -x "${DEPLOY_REGISTRY_CMD}" ]]; then
+    log "Release registry command not executable; skipping update: ${DEPLOY_REGISTRY_CMD}"
+    return
+  fi
+
+  local cmd=(
+    "${DEPLOY_REGISTRY_CMD}"
+    upsert
+    --release-id "${release_id}"
+    --commit-sha "${commit_sha}"
+    --status "${status}"
+  )
+  if [[ -n "${marker}" ]]; then
+    cmd+=(--migration-marker "${marker}")
+  fi
+
+  if ! "${cmd[@]}" >/dev/null; then
+    log "Release registry update failed (non-fatal): release=${release_id} status=${status}"
+  fi
+}
 
 cleanup_tmp() {
   if [[ -n "${TMP_RELEASE_DIR}" && -d "${TMP_RELEASE_DIR}" ]]; then
@@ -107,6 +150,10 @@ run_health_gate() {
       log "Rolling back symlink to previous release: ${PREVIOUS_TARGET}"
       switch_current_link "${PREVIOUS_TARGET}"
       restart_services
+    fi
+    registry_upsert "${COMMIT_SHA}" "${COMMIT_SHA}" "deploy_failed"
+    if [[ -n "${PREVIOUS_RELEASE_ID}" ]]; then
+      registry_upsert "${PREVIOUS_RELEASE_ID}" "${PREVIOUS_RELEASE_COMMIT:-${PREVIOUS_RELEASE_ID}}" "deployed"
     fi
     die "Deployment failed health gate"
   fi
@@ -168,13 +215,23 @@ fi
 
 if [[ -L "${DEPLOY_CURRENT_LINK}" ]]; then
   PREVIOUS_TARGET="$(readlink -f "${DEPLOY_CURRENT_LINK}" || true)"
+  if [[ -n "${PREVIOUS_TARGET}" ]]; then
+    PREVIOUS_RELEASE_ID="$(basename "${PREVIOUS_TARGET}")"
+    PREVIOUS_RELEASE_COMMIT="$(read_meta_value "${PREVIOUS_TARGET}/.deploy-meta" "commit_sha")"
+  fi
 fi
 
+registry_upsert "${COMMIT_SHA}" "${COMMIT_SHA}" "deploying"
 log "Switching current symlink atomically to ${RELEASE_DIR}"
 switch_current_link "${RELEASE_DIR}"
 
 restart_services
 run_health_gate
+
+registry_upsert "${COMMIT_SHA}" "${COMMIT_SHA}" "deployed"
+if [[ -n "${PREVIOUS_RELEASE_ID}" && "${PREVIOUS_RELEASE_ID}" != "${COMMIT_SHA}" ]]; then
+  registry_upsert "${PREVIOUS_RELEASE_ID}" "${PREVIOUS_RELEASE_COMMIT:-${PREVIOUS_RELEASE_ID}}" "replaced"
+fi
 
 log "Deployment succeeded"
 log "Current release: ${RELEASE_DIR}"
