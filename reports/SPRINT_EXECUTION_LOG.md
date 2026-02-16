@@ -23,7 +23,7 @@ Generated: 2026-02-16 11:32 UTC
 | MYO-34 | A2 | MYO-31 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
 | MYO-37 | A2 | MYO-34 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
 | MYO-40 | A2 | MYO-37 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
-| MYO-20 | A3 | MYO-17 | Todo | blocked | BLOCKED |  | backend-developer | host-only runtime required |
+| MYO-20 | A3 | MYO-17 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | preview runtime slots tester pass on branch `codex/myo-20-preview-runtime-slots` |
 | MYO-23 | A3 | MYO-20 | Todo | blocked | BLOCKED |  | backend-developer | host-only runtime required |
 | MYO-26 | A3 | MYO-23 | Todo | blocked | BLOCKED |  | backend-developer | host-only runtime required |
 | MYO-28 | A3 | MYO-26 | Todo | blocked | BLOCKED |  | backend-developer | host-only runtime required |

@@ -1,12 +1,12 @@
 # BACKEND_TEST_REPORT
-Generated: 2026-02-16 12:14 UTC
+Generated: 2026-02-16 12:20 UTC
 Tester Agent: backend-tester
-Task: MYO-19
+Task: MYO-20
 Project: Ouroboros (team Myownmint)
-Branch: codex/myo-19-codex-page-runs-inbox
-Commit: 2979b35
+Branch: codex/myo-20-preview-runtime-slots
+Commit: a08cccb
 Harness Mode: developer_handoff
-Extra Focus: api-contract,persistence
+Extra Focus: integration
 
 ## Verdict
 - Result: PASS
@@ -14,31 +14,33 @@ Extra Focus: api-contract,persistence
 - Linear transition applied: `Agent work DONE` -> `Agent testing` -> `Agent test DONE`
 
 ## Scope Under Test
-- `/codex` route
-- Prompt submission backend wiring (`POST /api/runs`)
-- Runs inbox list wiring (`GET /api/runs`)
-- Persistent context payload behavior
-- Pagination and status filters
+- Preview slot provisioning automation
+- Slot-to-port mapping documentation + env consistency
+- Per-slot health exposure
+- Dedicated URL routing configuration
+- Host-only runtime policy compliance
 
 ## Evidence
-1. Route + wiring
-   - `/codex` route exists and `/` redirects to `/codex`.
-   - Submit handler posts prompt/context payload to backend runs API.
-2. Runs list behavior
-   - Fetch uses `limit/offset` + status filter.
-   - Live refresh polling configured at 5 seconds.
-   - Status chips rendered via status classifier.
-3. Persistence + API behavior (SQLite-backed test run)
-   - Context fields (`route`, `note`, `metadata`) persisted and returned in create/detail/list responses.
-   - DB row confirmed in `run_context` for created run.
-4. Pagination/filter checks
-   - Page checks with `limit=1` + offsets returned expected envelope.
-   - Status filters returned expected totals (`queued=1`, `planning=2`, multi=3).
-5. Frontend quality checks
-   - `npm run typecheck`: pass
-   - `npm run test`: pass (4 tests)
-   - `npm run build`: pass
-   - `npm run lint`: warnings only, no errors
+1. Provisioning automation
+   - `scripts/preview-slots-provision.sh --dry-run` passed and emitted expected systemd/env install operations for preview1/2/3.
+2. Slot health exposure
+   - Direct health checks passed:
+     - `3101/health` -> `ok`
+     - `3102/health` -> `ok`
+     - `3103/health` -> `ok`
+3. URL routing definitions
+   - `infra/caddy/Caddyfile` includes:
+     - `preview1.example.com -> 127.0.0.1:3101`
+     - `preview2.example.com -> 127.0.0.1:3102`
+     - `preview3.example.com -> 127.0.0.1:3103`
+4. Mapping consistency
+   - `infra/systemd/env/web-preview1.env`, `web-preview2.env`, `web-preview3.env` match documented slot IDs, URLs, roots, and ports.
+5. Host-only policy
+   - No Docker/Compose/K8s/container assumptions in tested MYO-20 runtime path.
+
+## Environment Notes
+- `caddy` binary is not installed in this tester environment, so routed host-header health execution could not be run live.
+- Route config consistency + direct slot health checks are validated and treated as sufficient for this pass.
 
 ## Defects
 - None blocking.
