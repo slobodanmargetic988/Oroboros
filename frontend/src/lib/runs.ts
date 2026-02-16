@@ -28,6 +28,12 @@ export interface RunItem {
   prompt: string;
   status: RunStatus;
   route?: string | null;
+  slot_id?: string | null;
+  branch_name?: string | null;
+  worktree_path?: string | null;
+  commit_sha?: string | null;
+  parent_run_id?: string | null;
+  created_by?: string | null;
   created_at: string;
   updated_at: string;
   context?: RunContext | null;
@@ -80,6 +86,21 @@ export interface RunListResponse {
   total: number;
   limit: number;
   offset: number;
+}
+
+export interface SlotStateItem {
+  slot_id: string;
+  state: string;
+  run_id: string | null;
+  lease_state: string | null;
+  expires_at: string | null;
+  heartbeat_at: string | null;
+}
+
+export interface SlotWaitingReason {
+  reason: string;
+  occupied_slots: string[];
+  queue_behavior: string | null;
 }
 
 const artifactHintPattern = /(artifact|log|uri|url|report|output)/i;
@@ -439,4 +460,45 @@ export function isRunRelatedToRoute(runRoute: string, currentRoute: string): boo
 export function filterRunsByRoute(runs: RunItem[], route: string | null | undefined): RunItem[] {
   const normalizedRoute = normalizeRoutePath(route);
   return runs.filter((run) => isRunRelatedToRoute(getRunRoute(run), normalizedRoute));
+}
+
+export function extractLatestSlotWaitingReason(events: RunEventItem[]): SlotWaitingReason | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event || event.event_type !== "slot_waiting" || !event.payload) {
+      continue;
+    }
+
+    const reason =
+      typeof event.payload.reason === "string" && event.payload.reason.trim()
+        ? event.payload.reason.trim()
+        : "WAITING_FOR_SLOT";
+    const queueBehavior =
+      typeof event.payload.queue_behavior === "string" && event.payload.queue_behavior.trim()
+        ? event.payload.queue_behavior.trim()
+        : null;
+
+    const occupiedSlots = Array.isArray(event.payload.occupied_slots)
+      ? event.payload.occupied_slots
+          .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+          .map((value) => value.trim())
+      : [];
+
+    return {
+      reason,
+      occupied_slots: occupiedSlots,
+      queue_behavior: queueBehavior,
+    };
+  }
+
+  return null;
+}
+
+export function previewUrlForSlot(slotId: string): string {
+  const normalized = slotId.trim().toLowerCase();
+  const match = normalized.match(/preview-?(\d+)/);
+  if (match?.[1]) {
+    return `https://preview${match[1]}.example.com`;
+  }
+  return "https://app.example.com";
 }

@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  filterRunsByRoute,
   extractArtifactLinks,
   extractFailureReasons,
   extractFileDiffEntries,
+  extractLatestSlotWaitingReason,
+  filterRunsByRoute,
   getRunRoute,
   hasMigrationWarning,
   makeRunTitle,
   normalizeRoutePath,
+  previewUrlForSlot,
   statusChipClass,
   summarizeChecks,
 } from "./runs";
@@ -303,5 +305,49 @@ describe("route context helpers", () => {
 
     const related = filterRunsByRoute(runs, "/codex");
     expect(related.map((run) => run.id)).toEqual(["run-2", "run-3"]);
+  });
+});
+
+describe("slot helpers", () => {
+  it("extracts latest slot waiting reason payload", () => {
+    const result = extractLatestSlotWaitingReason([
+      {
+        id: 1,
+        run_id: "run-1",
+        event_type: "slot_waiting",
+        status_from: null,
+        status_to: null,
+        payload: {
+          reason: "WAITING_FOR_SLOT",
+          occupied_slots: ["preview-1", "preview-2", "preview-3"],
+          queue_behavior: "run_kept_queued_while_waiting_for_slot",
+        },
+        created_at: "2026-02-16T00:00:00Z",
+      },
+      {
+        id: 2,
+        run_id: "run-1",
+        event_type: "slot_waiting",
+        status_from: null,
+        status_to: null,
+        payload: {
+          reason: "WAITING_FOR_SLOT",
+          occupied_slots: ["preview-1"],
+          queue_behavior: "run_kept_queued_while_waiting_for_slot",
+        },
+        created_at: "2026-02-16T00:01:00Z",
+      },
+    ]);
+
+    expect(result).toEqual({
+      reason: "WAITING_FOR_SLOT",
+      occupied_slots: ["preview-1"],
+      queue_behavior: "run_kept_queued_while_waiting_for_slot",
+    });
+  });
+
+  it("maps preview slot id to URL", () => {
+    expect(previewUrlForSlot("preview-2")).toBe("https://preview2.example.com");
+    expect(previewUrlForSlot("unknown")).toBe("https://app.example.com");
   });
 });

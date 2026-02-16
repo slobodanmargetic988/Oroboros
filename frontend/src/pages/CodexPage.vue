@@ -70,9 +70,44 @@
       <div class="meta-row">
         <span>Total: {{ total }}</span>
         <span>Visible: {{ visibleRuns.length }}</span>
+        <span>Occupied slots: {{ occupiedSlotCount }}/{{ slots.length }}</span>
+        <span>Waiting runs: {{ waitingRunsCount }}</span>
         <span>Offset: {{ offset }}</span>
         <span>Limit: {{ limit }}</span>
         <span>Last sync: {{ lastSyncLabel }}</span>
+      </div>
+
+      <div class="slots-panel">
+        <div class="slots-head">
+          <p>Preview Slot Occupancy</p>
+          <button @click="refreshSlotsOnly">Refresh Slots</button>
+        </div>
+        <p v-if="slotsError" class="error">{{ slotsError }}</p>
+        <ul v-if="slots.length" class="slots-grid">
+          <li v-for="slot in slots" :key="slot.slot_id" class="slot-item">
+            <div class="slot-top">
+              <strong>{{ slot.slot_id }}</strong>
+              <span :class="slotStateChipClass(slot.state)">{{ slot.state }}</span>
+            </div>
+            <p v-if="slot.run_id" class="slot-run">
+              Run:
+              <RouterLink :to="`/codex/runs/${slot.run_id}`">{{ slot.run_id }}</RouterLink>
+            </p>
+            <p v-else class="slot-run">Run: -</p>
+            <a
+              v-if="slot.run_id && isSlotActive(slot)"
+              :href="previewUrlForSlot(slot.slot_id)"
+              target="_blank"
+              rel="noreferrer"
+              class="preview-link"
+            >
+              Open preview
+            </a>
+            <p class="slot-meta">
+              Expires: {{ formatTime(slot.expires_at) }}
+            </p>
+          </li>
+        </ul>
       </div>
 
       <div v-if="currentRouteRuns.length" class="related-panel">
@@ -100,6 +135,19 @@
           <div class="run-meta">
             <span>ID: {{ run.id }}</span>
             <span>Route: <code>{{ getRunRoute(run) }}</code></span>
+            <span>Slot: <code>{{ getRunSlot(run) || "-" }}</code></span>
+            <a
+              v-if="getRunSlot(run)"
+              :href="previewUrlForSlot(getRunSlot(run)!)"
+              target="_blank"
+              rel="noreferrer"
+              class="preview-link"
+            >
+              Open preview
+            </a>
+            <span v-if="getRunWaitingReasonLabel(run)" class="waiting-badge">
+              Waiting: {{ getRunWaitingReasonLabel(run) }}
+            </span>
             <span v-if="isRunRelatedToRoute(getRunRoute(run), currentRoutePath)" class="route-badge">On this page</span>
             <span>Note: {{ run.context?.note || "-" }}</span>
           </div>
@@ -120,13 +168,18 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import {
+  extractLatestSlotWaitingReason,
   filterRunsByRoute,
   getRunRoute,
   isRunRelatedToRoute,
   makeRunTitle,
   normalizeRoutePath,
   RunItem,
+  RunEventItem,
   RunListResponse,
+  SlotStateItem,
+  SlotWaitingReason,
+  previewUrlForSlot,
   statusChipClass,
 } from "../lib/runs";
 
@@ -147,6 +200,9 @@ const offset = ref(0);
 const statusFilter = ref("");
 const routeFilter = ref("");
 const lastSync = ref<Date | null>(null);
+const slots = ref<SlotStateItem[]>([]);
+const slotsError = ref("");
+const waitingReasonsByRunId = ref<Record<string, SlotWaitingReason>>({});
 
 const commonStatuses = [
   "queued",
@@ -179,6 +235,18 @@ const visibleRuns = computed(() => {
   return filterRunsByRoute(runs.value, filterRoute);
 });
 const currentRouteRuns = computed(() => filterRunsByRoute(runs.value, currentRoutePath.value));
+const slotByRunId = computed(() => {
+  const mapping = new Map<string, SlotStateItem>();
+  for (const slot of slots.value) {
+    if (!slot.run_id) {
+      continue;
+    }
+    mapping.set(slot.run_id, slot);
+  }
+  return mapping;
+});
+const occupiedSlotCount = computed(() => slots.value.filter((slot) => isSlotActive(slot)).length);
+const waitingRunsCount = computed(() => Object.keys(waitingReasonsByRunId.value).length);
 
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -197,6 +265,55 @@ function parseMetadata(): Record<string, unknown> | undefined {
   } catch (error) {
     throw new Error(`Invalid metadata JSON: ${(error as Error).message}`);
   }
+}
+
+function isSlotActive(slot: SlotStateItem): boolean {
+  return slot.state === "leased" && !!slot.run_id;
+}
+
+function slotStateChipClass(state: string): string {
+  if (state === "leased") {
+    return "chip chip-success";
+  }
+  if (state === "expired") {
+    return "chip chip-danger";
+  }
+  if (state === "released") {
+    return "chip chip-warn";
+  }
+  return "chip chip-neutral";
+}
+
+function getRunSlot(run: RunItem): string | null {
+  if (run.slot_id && run.slot_id.trim()) {
+    return run.slot_id;
+  }
+  return slotByRunId.value.get(run.id)?.slot_id ?? null;
+}
+
+function getRunWaitingReasonLabel(run: RunItem): string | null {
+  if (getRunSlot(run)) {
+    return null;
+  }
+  const waiting = waitingReasonsByRunId.value[run.id];
+  if (!waiting) {
+    return null;
+  }
+  if (!waiting.occupied_slots.length) {
+    return waiting.reason;
+  }
+  return `${waiting.reason} (${waiting.occupied_slots.join(", ")})`;
+}
+
+function formatTime(value: string | null): string {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "-";
+  }
+  return parsed.toLocaleTimeString();
 }
 
 async function submitPrompt() {
@@ -235,6 +352,45 @@ async function submitPrompt() {
   }
 }
 
+async function fetchSlotStates(): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/slots`);
+  if (!response.ok) {
+    throw new Error(`Slot fetch failed (${response.status})`);
+  }
+  slots.value = (await response.json()) as SlotStateItem[];
+}
+
+async function fetchWaitingReasons(runItems: RunItem[]): Promise<void> {
+  const candidates = runItems.filter((run) => !run.slot_id);
+  if (!candidates.length) {
+    waitingReasonsByRunId.value = {};
+    return;
+  }
+
+  const waitingPairs = await Promise.all(
+    candidates.map(async (run) => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/runs/${run.id}/events?limit=200`);
+        if (!response.ok) {
+          return [run.id, null] as const;
+        }
+        const events = (await response.json()) as RunEventItem[];
+        return [run.id, extractLatestSlotWaitingReason(events)] as const;
+      } catch {
+        return [run.id, null] as const;
+      }
+    }),
+  );
+
+  const next: Record<string, SlotWaitingReason> = {};
+  waitingPairs.forEach(([runId, waiting]) => {
+    if (waiting) {
+      next[runId] = waiting;
+    }
+  });
+  waitingReasonsByRunId.value = next;
+}
+
 async function refreshRuns() {
   const params = new URLSearchParams({
     limit: String(limit.value),
@@ -259,6 +415,26 @@ async function refreshRuns() {
   total.value = payload.total;
   limit.value = payload.limit;
   offset.value = payload.offset;
+
+  try {
+    await fetchSlotStates();
+    slotsError.value = "";
+  } catch (error) {
+    slotsError.value = (error as Error).message;
+  }
+
+  await fetchWaitingReasons(payload.items);
+  lastSync.value = new Date();
+}
+
+async function refreshSlotsOnly() {
+  try {
+    await fetchSlotStates();
+    slotsError.value = "";
+  } catch (error) {
+    slotsError.value = (error as Error).message;
+  }
+  await fetchWaitingReasons(runs.value);
   lastSync.value = new Date();
 }
 
@@ -469,6 +645,60 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.slots-panel {
+  border: 1px solid #d1fae5;
+  background: #f0fdfa;
+  border-radius: 10px;
+  padding: 0.7rem;
+  margin-bottom: 0.8rem;
+}
+
+.slots-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.55rem;
+}
+
+.slots-head p {
+  margin: 0;
+  color: #0f766e;
+  font-weight: 600;
+}
+
+.slots-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.55rem;
+}
+
+.slot-item {
+  border: 1px solid #99f6e4;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 0.55rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.slot-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.slot-run,
+.slot-meta {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #334155;
+}
+
 .related-panel {
   border: 1px solid #bfdbfe;
   background: #eff6ff;
@@ -553,6 +783,26 @@ button:disabled {
   color: #64748b;
   font-size: 0.82rem;
   flex-wrap: wrap;
+}
+
+.preview-link {
+  color: #0f766e;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.preview-link:hover {
+  text-decoration: underline;
+}
+
+.waiting-badge {
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: #fef9c3;
+  border: 1px solid #facc15;
+  color: #854d0e;
 }
 
 .route-badge {
