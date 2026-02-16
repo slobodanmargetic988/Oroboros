@@ -1,17 +1,16 @@
 # COMMIT REVIEW TASKS
 
 ## Executive Summary
-- Review target: `codex/myo-17-state-machine-contract`.
-- Review window requested: `commits=8`; effective unmerged chain in scope: `f715062` (MYO-17), `615a2ac` (MYO-16), `9159e2b` + `7ad66b3` (MYO-15), `455ebad` (MYO-14), `f65756c`.
-- Gate enforcement result: **failed** at review start. Linear status for `MYO-17` is currently `Agent testing` (not `Agent test DONE`).
-- Host-only policy check across chain context:
-  - Runtime implementation/docs are host-native (`systemd`, host services) and contain explicit non-container runtime guidance.
-  - A policy-inconsistent reference remains in core spec doc (`docs/codex-builder-core-spec.md`) mentioning Docker/container options.
-- Release-blocking defects (`P0`): none found in code path reviewed.
+- Review target: `codex/myo-21-slot-lease-manager`.
+- Review window requested: `commits=8`; effective unmerged chain in scope: `f8c1eac` (MYO-21), `d463ab8` (MYO-18), `f715062` (MYO-17), `615a2ac` (MYO-16), `9159e2b` + `7ad66b3` (MYO-15), `455ebad` (MYO-14), `f65756c`.
+- Gate check: **passed**. Linear issue `MYO-21` is `Agent test DONE`.
+- Acceptance criteria coverage: atomic acquire/release, heartbeat+reaper, and queue behavior are implemented and tester-validated.
+- Contract regression check vs MYO-17: state-machine contract remains intact; slots API extends contract as expected.
+- Merge blockers: none at `P0/P1`; one contract consistency defect at `P2`.
 
 ## Top Urgent Items
-1. [P1-1] Complete tester gate transition to `Agent test DONE` before reviewer closeout.
-2. [P3-1] Align core spec wording with host-only runtime policy to avoid future branch drift back to container assumptions.
+1. [P2-1] Make `/api/slots/contract` return configured slot IDs instead of hardcoded values.
+2. [P3-1] Sync branch-local sprint execution log with tester-complete status.
 
 ## Findings
 
@@ -19,48 +18,46 @@
 - No findings.
 
 ### P1
-
-#### Finding P1-1
-- **Finding ID:** P1-1
-- **Priority:** P1
-- **Commit hash:** `f715062164638b79bf20c1d5d73298f1d81e584b`
-- **File + line:**
-  - `/Users/slobodan/Projects/Oroboros/reports/SPRINT_EXECUTION_LOG.md:13`
-  - Linear issue `MYO-17` (`updatedAt=2026-02-16T11:54:40.821Z`, status=`Agent testing`)
-- **Issue summary:** Required start gate is not satisfied: issue is still `Agent testing`, not `Agent test DONE`.
-- **Impact:** Reviewer sign-off would bypass required tester completion state and can approve code without the expected final tester gate.
-- **Recommended fix:** Complete tester phase for MYO-17 and update issue state to `Agent test DONE` before rerunning closeout review.
-- **Confidence:** high
-- **Verification steps:**
-  1. Check Linear issue `MYO-17` state.
-  2. Confirm latest tester comment indicates PASS/FAIL and that state transition to `Agent test DONE` occurred.
-  3. Re-run review after gate is satisfied.
-- **Status:** OPEN
+- No findings.
 
 ### P2
-- No findings.
+
+#### Finding P2-1
+- **Finding ID:** P2-1
+- **Priority:** P2
+- **Commit hash:** `f8c1eac56878cba0875b94a7b3adb3af1de58fa6`
+- **File + line:**
+  - `/Users/slobodan/Projects/Oroboros/backend/app/api/slots.py:144`
+  - `/Users/slobodan/Projects/Oroboros/backend/app/core/config.py:11`
+- **Issue summary:** `GET /api/slots/contract` returns hardcoded `slot_ids` (`preview-1..preview-3`) instead of reflecting configured slot IDs (`slot_ids_csv`).
+- **Impact:** If slot configuration changes, runtime behavior and advertised API contract can diverge, causing clients/orchestrators to act on stale slot definitions.
+- **Recommended fix:** Derive `slot_ids` in contract response from settings (same source used by lease manager), not a literal list.
+- **Confidence:** high
+- **Verification steps:**
+  1. Set `SLOT_IDS_CSV` to a non-default value in backend env.
+  2. Call `GET /api/slots` and `GET /api/slots/contract`.
+  3. Confirm both endpoints report the same slot ID set.
+- **Status:** OPEN
 
 ### P3
 
 #### Finding P3-1
 - **Finding ID:** P3-1
 - **Priority:** P3
-- **Commit hash:** `f65756c0c4d480bb117fc6c17930b42894a7c63b`
+- **Commit hash:** `f8c1eac56878cba0875b94a7b3adb3af1de58fa6`
 - **File + line:**
-  - `/Users/slobodan/Projects/Oroboros/docs/codex-builder-core-spec.md:27`
-  - `/Users/slobodan/Projects/Oroboros/docs/codex-builder-core-spec.md:296`
-  - `/Users/slobodan/Projects/Oroboros/docs/runtime-topology.md:65`
-- **Issue summary:** Core spec still references Docker/container alternatives while active runtime policy and implementation are explicitly host-only.
-- **Impact:** Low immediate runtime risk, but can reintroduce container-oriented assumptions in future tasks and create avoidable implementation churn.
-- **Recommended fix:** Update core spec runtime/deployment decision text to match enforced host-only policy, or annotate container references as intentionally deprecated.
+  - `/Users/slobodan/Projects/Oroboros/reports/SPRINT_EXECUTION_LOG.md:15`
+- **Issue summary:** Branch-local execution log remains at `Agent work DONE` while Linear is `Agent test DONE`.
+- **Impact:** Low coordination risk for orchestration/report consumers.
+- **Recommended fix:** Update local execution log row for MYO-21 to reflect tester-complete state.
 - **Confidence:** high
 - **Verification steps:**
-  1. Confirm host-only policy statement remains in `docs/runtime-topology.md`.
-  2. Remove/clarify conflicting container options in `docs/codex-builder-core-spec.md`.
-  3. Validate new work items no longer treat Docker/Compose as an accepted runtime path.
+  1. Compare MYO-21 status in Linear and `SPRINT_EXECUTION_LOG.md`.
+  2. Align local row to tester-complete state.
+  3. Reconfirm downstream handoff state remains consistent.
 - **Status:** OPEN
 
 ## Duplicate Merge Notes
-- No duplicate findings were detected across the in-scope commits.
+- No duplicate findings were detected across the in-scope commit chain.
 
-MYO-17 decision: CHANGES_REQUIRED
+MYO-21 decision: APPROVE_FOR_HUMAN_REVIEW
