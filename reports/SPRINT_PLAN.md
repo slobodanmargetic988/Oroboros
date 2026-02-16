@@ -1,5 +1,5 @@
 # SPRINT_PLAN
-Generated: 2026-02-16 10:22 UTC
+Generated: 2026-02-16 11:11 UTC
 Agent: sprint-orchestrator-agent
 
 ## Scope
@@ -9,20 +9,22 @@ Agent: sprint-orchestrator-agent
 - Mode: Planning/orchestration only (no implementation execution)
 - Merge mode: sequential
 
-## Policy Lock
-- Status flow: Todo -> In Progress -> In Review -> Done
-- Handoff flow: developer -> tester -> review-ready
-- Prep phase capacity: exactly 1 active worker (MYO-14 -> MYO-15 -> MYO-16 -> MYO-17)
-- Post-prep capacity: max 3 active workers in parallel (A1 backend, A2 frontend, A3 infra)
-- Dependency order is strict; blocked issues remain in current status with blocker comment
-- Linear updates: update existing issues only
+## Workflow Lock (team statuses)
+Use these statuses exactly to prevent parallel agent collisions:
+1. Todo
+2. Agent working (task claimed by developer)
+3. Agent work DONE (developer handoff complete)
+4. Agent testing (task claimed by tester)
+5. Agent test DONE (tester handoff complete)
+6. Agent review (task claimed by reviewer agent)
+7. Agent review DONE (review agent done)
+8. Human Review
+9. Done
 
-## Agent Mapping
-- Prep lane (MYO-14..MYO-17): fullstack-developer -> backend-tester
-- A1 lane (backend): backend-developer -> backend-tester
-- A2 lane (frontend): frontend-developer -> frontend-tester
-- A3 lane (infra): backend-developer -> backend-tester
-- Integration lane (MYO-42..MYO-44): fullstack-developer -> backend-tester
+## Ownership Rule
+- Exactly one issue owner phase at a time.
+- Any issue in `Agent working`, `Agent testing`, or `Agent review` is considered locked/taken.
+- Next agent may start only when prior phase reaches `... DONE` state.
 
 ## Dependency Map
 - Prep: MYO-14 -> MYO-15 -> MYO-16 -> MYO-17
@@ -30,34 +32,23 @@ Agent: sprint-orchestrator-agent
 - A2: MYO-19 -> MYO-22 -> MYO-25 -> MYO-29 -> MYO-31 -> MYO-34 -> MYO-37 -> MYO-40
 - A3: MYO-20 -> MYO-23 -> MYO-26 -> MYO-28 -> MYO-32 -> MYO-35 -> MYO-38 -> MYO-41
 - Integration: MYO-42 -> MYO-43 -> MYO-44
-- Integration gate: MYO-42 also waits for terminal lane completion (MYO-39, MYO-40, MYO-41)
+- Integration gate: MYO-42 waits for MYO-39, MYO-40, MYO-41 completion
 
-## Linear Snapshot (at cycle start)
-- Total tracked issues: 31
-- Todo: 31
-- In Progress: 0
-- In Review: 0
-- Done: 0
+## Linear Snapshot (this cycle)
+- MYO-14: Human Review
+- MYO-15..MYO-44: Todo
 
 ## Ready Now
-1. MYO-14 `[A0-01] Bootstrap monorepo skeleton and runtime boundaries`
-   - Why ready: No predecessor dependency
-   - Worker slot: Prep worker #1 (only active worker allowed in prep)
+1. MYO-14
+   - Stage: Human Review gate
+   - Action: finalize review decision -> Done (or back to Agent review/Agent working if changes requested)
 
 ## Blocked Gateways
-- MYO-15 blocked by MYO-14
+- MYO-15 blocked by MYO-14 (requires MYO-14 Done)
 - MYO-16 blocked by MYO-15
 - MYO-17 blocked by MYO-16
-- MYO-18 blocked by MYO-17
-- MYO-19 blocked by MYO-17
-- MYO-20 blocked by MYO-17
-- MYO-42 blocked by MYO-39, MYO-40, MYO-41
-
-## Linear Updates Applied This Cycle
-- Added orchestration comment on MYO-14 (ready-now kickoff)
-- Added blocker comments on MYO-15, MYO-16, MYO-17
-- Added prep-gate blocker comments on MYO-18, MYO-19, MYO-20
-- Added integration-gate blocker comment on MYO-42
+- MYO-18/MYO-19/MYO-20 blocked by MYO-17
+- MYO-42 blocked by MYO-39/MYO-40/MYO-41
 
 ## New Issues
 - None created in this cycle

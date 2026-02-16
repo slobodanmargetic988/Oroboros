@@ -1,58 +1,93 @@
 # SPRINT_AGENT_ACTIVATIONS
-Generated: 2026-02-16 10:22 UTC
+Generated: 2026-02-16 11:14 UTC
 
-## Ready Now Activations
+## Ready Now (reviewer only)
 
-### Activation 1: Developer (Run now)
-```txt
-Agent: fullstack-developer
-Issue: MYO-14
-Project: Ouroboros (team Myownmint)
-Objective: Implement MYO-14 "[A0-01] Bootstrap monorepo skeleton and runtime boundaries".
-
-Requirements:
-- Follow issue acceptance criteria exactly.
-- Keep dependency order intact (prep lane only; do not start MYO-15 yet).
-- Do not touch unrelated issues.
-- Use feature branch from the issue branch naming convention.
-
-Status workflow to apply in Linear:
-1) Set MYO-14 to In Progress when work starts.
-2) Leave clear implementation notes + evidence links in issue comment.
-3) When development is done, hand off to tester (do not mark Done directly).
-
-Handoff target after dev: backend-tester
-Handoff note to include: "MYO-14 ready for test pass under prep lane constraints."
-
-Output back to orchestrator:
-- What was completed vs acceptance criteria
-- Risks/gaps
-- Exact tester handoff note
+### Prompt 1: Reviewer for MYO-14
+```text
+Agent: recent-commit-review-agent
+Goal: Final review of MYO-14 implementation for closeout decision.
+Review mode: auto
+Mode: review
+Review window: commits=8
+Primary deliverable: /Users/slobodan/Projects/Oroboros/reports/COMMIT_REVIEW_TASKS.md
+Constraints:
+- Read-only review. Do not modify source code.
+- Review target branch/commit evidence from MYO-14 handoff (`codex/worker1-myo-14`, `455ebad`).
+- Validate acceptance criteria coverage and identify any release-blocking defects.
+Output:
+- Findings sorted P0-P3 with evidence.
+- Explicit final line: `MYO-14 decision: APPROVE_FOR_DONE` or `MYO-14 decision: CHANGES_REQUIRED`.
 ```
 
-### Activation 2: Tester (Run only after developer handoff)
-```txt
+## Queue Prepared (execute only after MYO-14 = Done)
+
+### Prompt 2: Worker (developer) for MYO-15
+```text
+Agent: backend-developer
+Goal: Implement MYO-15 "[A0-02] Stand up base Linux runtime with process topology".
+Inputs: task_identifier: MYO-15
+Inputs: repo_root: /Users/slobodan/Projects/Oroboros
+Inputs: default_branch: main
+Inputs: acceptance_criteria: Service topology documented; base process manager setup committed; reverse proxy routes for production and 3 preview URLs prepared; health endpoints reachable for all core services.
+Inputs: stack_file_path: /Users/slobodan/Projects/Oroboros/docs/codex-builder-core-spec.md
+Inputs: task_list_path: /Users/slobodan/Projects/Oroboros/reports/SPRINT_EXECUTION_LOG.md
+Inputs: linear_issue_id: MYO-15
+Inputs: linear_workflow_path: /Users/slobodan/Projects/Agents/agents/_shared/LINEAR_WORKFLOW.md
+Inputs: linear_ready_for_test_status: Agent work DONE
+Inputs: branch_name: codex/myo-15-runtime-topology
+Inputs: commit_mode: commit
+Constraints:
+- Start by setting MYO-15 to `Agent working` to claim ownership.
+- Keep dependency order (prep lane).
+- When dev is complete, set MYO-15 to `Agent work DONE` and post tester handoff with branch + commit.
+Output:
+- Code/config changes for MYO-15
+- Check results
+- Tester handoff comment payload
+```
+
+### Prompt 3: Tester for MYO-15
+```text
 Agent: backend-tester
-Issue: MYO-14
-Project: Ouroboros (team Myownmint)
-Trigger: Run only after developer confirms implementation complete.
-
-Objective:
-- Validate MYO-14 acceptance criteria with reproducible checks.
-- Record pass/fail evidence and defects in Linear comments.
-
-Status workflow to apply in Linear:
-1) Keep issue in In Progress during testing.
-2) If defects exist, comment blockers and return to developer.
-3) If tests pass, set issue to In Review and add "review-ready" comment.
-4) Do not set Done; reviewer/maintainer closes after review.
-
-Output back to orchestrator:
-- Test evidence summary
-- Defects (if any)
-- Recommendation: review-ready or back-to-dev
+Goal: Validate MYO-15 implementation and determine review readiness.
+Inputs: task_identifier: MYO-15
+Inputs: repo_root: /Users/slobodan/Projects/Oroboros
+Inputs: default_branch: main
+Inputs: test_target: deployment/process topology/reverse proxy/health endpoints
+Inputs: stack_file_path: /Users/slobodan/Projects/Oroboros/docs/codex-builder-core-spec.md
+Inputs: harness_mode: developer_handoff
+Inputs: extra_test_focus: integration
+Inputs: task_list_path: /Users/slobodan/Projects/Oroboros/reports/SPRINT_EXECUTION_LOG.md
+Inputs: linear_issue_id: MYO-15
+Inputs: linear_workflow_path: /Users/slobodan/Projects/Agents/agents/_shared/LINEAR_WORKFLOW.md
+Inputs: linear_ready_statuses: Agent work DONE, Agent testing
+Inputs: post_not_ready_comment: true
+Inputs: branch_name: codex/myo-15-runtime-topology
+Inputs: commit_mode: commit
+Constraints:
+- Set status to `Agent testing` when test phase starts.
+- If pass, set `Agent test DONE` and hand off to reviewer.
+- If fail, return issue to `Agent working` with defect evidence.
+Output:
+- /Users/slobodan/Projects/Oroboros/reports/BACKEND_TEST_REPORT.md
+- Pass/fail evidence
+- Reviewer handoff recommendation
 ```
 
-## Queue-Prepared (Not Ready Yet)
-- Prep next: MYO-15 (unblocks only after MYO-14 review-ready/done)
-- Parallel lane starts after prep complete: MYO-18, MYO-19, MYO-20
+### Prompt 4: Reviewer for MYO-15
+```text
+Agent: recent-commit-review-agent
+Goal: Review tested MYO-15 output and provide closeout recommendation.
+Review mode: auto
+Mode: review
+Review window: commits=8
+Primary deliverable: /Users/slobodan/Projects/Oroboros/reports/COMMIT_REVIEW_TASKS.md
+Constraints:
+- Start only after MYO-15 is in `Agent test DONE`.
+- Read-only review.
+- Focus on deployment safety, topology correctness, and rollback risk.
+Output:
+- Prioritized findings with verification steps.
+- Explicit final line: `MYO-15 decision: APPROVE_FOR_HUMAN_REVIEW` or `MYO-15 decision: CHANGES_REQUIRED`.
+```
