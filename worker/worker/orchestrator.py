@@ -6,6 +6,7 @@ import logging
 import os
 from pathlib import Path
 import shlex
+import subprocess
 import sys
 import time
 from typing import Any
@@ -256,6 +257,17 @@ class WorkerOrchestrator:
                 db.rollback()
                 return
 
+            commit_sha = self._resolve_worktree_commit_sha(claimed.worktree_path)
+            if commit_sha:
+                run.commit_sha = commit_sha
+                db.add(
+                    RunEvent(
+                        run_id=run.id,
+                        event_type="run_commit_resolved",
+                        payload={"source": "worker", "commit_sha": commit_sha},
+                    )
+                )
+
             self._record_output_artifact(
                 db=db,
                 run=run,
@@ -433,6 +445,19 @@ class WorkerOrchestrator:
                 artifact_uri=artifact_uri,
             )
         )
+
+    def _resolve_worktree_commit_sha(self, worktree_path: Path) -> str | None:
+        proc = subprocess.run(
+            ["git", "-C", str(worktree_path), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            self.logger.warning("Unable to resolve commit SHA for worktree %s", worktree_path)
+            return None
+        value = proc.stdout.strip()
+        return value or None
 
     def _run_validation_pipeline(
         self,
