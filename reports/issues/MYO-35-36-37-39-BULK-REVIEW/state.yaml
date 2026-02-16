@@ -1,0 +1,30 @@
+task_identifier: MYO-35-36-37-39-BULK-REVIEW
+tracking_mode: local
+packet_type: REVIEW_TASK
+role: recent-commit-review-agent
+status: done
+decision: review_blocked
+handoff_to: developer
+branch: main
+head_commit: b6c1727
+workspace_head_commit: b4307c1
+review_range: 6873cc2..b6c1727
+review_window: commits=4
+packet_version: 1
+updated_at: 2026-02-16T20:37:45Z
+deliverable: /Users/slobodan/Projects/Oroboros/reports/issues/MYO-35-36-37-39-BULK-REVIEW/COMMIT_REVIEW_TASKS.md
+findings:
+  total: 5
+  by_priority:
+    P0: 0
+    P1: 2
+    P2: 2
+    P3: 1
+  needs_manual_verification:
+    - P3-1
+checks:
+  - "python3 -m unittest backend/tests/test_approvals_merge_gate.py: fail"
+  - "python3 -m unittest tests/test_orchestrator_validation_pipeline.py (worker): fail"
+  - "python3 -m unittest backend/tests/test_runs_resilience.py: pass"
+  - "python3 -m unittest backend/tests/test_events_api.py: pass"
+  - "python3 -m unittest backend/tests/test_observability_metrics.py: pass"
