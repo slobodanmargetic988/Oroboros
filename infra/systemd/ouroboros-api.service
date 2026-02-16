@@ -7,9 +7,9 @@ Wants=postgresql.service redis.service
 Type=simple
 User=oroboros
 Group=oroboros
-WorkingDirectory=/srv/oroboros/backend
+WorkingDirectory=/srv/oroboros/current/backend
 EnvironmentFile=/etc/oroboros/api.env
-ExecStart=/srv/oroboros/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+ExecStart=/srv/oroboros/current/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=3
 
