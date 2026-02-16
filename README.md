@@ -40,6 +40,7 @@ This repository contains the initial runtime boundaries for the Codex Builder Co
    - `docs/fullstack-preview-ops-runbook.md`
    - `docs/preview-runtime-slots.md`
    - `docs/preview-smoke-e2e-harness.md`
+   - `docs/integration-happy-path-validation.md`
    - `docs/worker-security-guardrails.md`
    - `docs/operator-incident-rollback-runbook.md`
    - `docs/mvp-go-live-checklist.md`

@@ -121,5 +121,10 @@ Daily health summaries are written to:
 - Output: machine-readable JSON artifact and stdout summary for validation pipeline use
 - Optional persistence: `--run-id <run_id> --persist-validation` stores records in `validation_checks` + `run_artifacts`
 
+## Happy Path Integration Harness (MYO-42)
+- Command: `./scripts/integration-happy-path.sh`
+- Validates prompt -> worker -> preview smoke -> approve/merge -> post-deploy health.
+- Persists integration evidence to run artifacts (`integration_happy_path_report`) and run timeline event (`integration_happy_path_completed`).
+
 ## Non-container Constraint
 This topology intentionally avoids Docker/Compose/Kubernetes and runs services directly as host processes under `systemd`.

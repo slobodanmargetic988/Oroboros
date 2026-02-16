@@ -82,6 +82,11 @@ Persist harness result for a run into validation tables:
   --persist-validation
 ```
 
+Run full happy-path integration validation (prompt -> preview -> approve -> merge -> deploy health):
+```bash
+./scripts/integration-happy-path.sh
+```
+
 Allocate one preview slot for a run (includes DB reset + seed flow):
 ```bash
 ./scripts/preview-slot-allocate.sh --run-id <run_id> --seed-version v1 --strategy seed
