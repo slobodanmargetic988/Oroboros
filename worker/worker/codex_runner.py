@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import fnmatch
 import os
 from dataclasses import dataclass
 from pathlib import Path
 import shlex
 import subprocess
+import tempfile
 import time
 from typing import Callable
 
@@ -26,6 +28,116 @@ class RunCanceledSignal(Exception):
 
 class LeaseExpiredSignal(Exception):
     pass
+
+
+def _csv_tokens(raw: str) -> list[str]:
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _default_allowed_commands() -> list[str]:
+    return [
+        "codex",
+        "python",
+        "python*",
+        "bash",
+        "sh",
+        "git",
+        "npm",
+        "node",
+    ]
+
+
+def _allowed_command_patterns() -> list[str]:
+    raw = os.getenv("WORKER_ALLOWED_COMMANDS", "")
+    if raw.strip():
+        return _csv_tokens(raw)
+    return _default_allowed_commands()
+
+
+def _default_allowed_paths() -> list[Path]:
+    roots: list[Path] = []
+    configured_root = os.getenv("WORKER_WORKTREE_ROOT", "/srv/oroboros/worktrees").strip()
+    if configured_root:
+        roots.append(Path(configured_root).expanduser().resolve())
+    roots.append(Path(tempfile.gettempdir()).resolve())
+    return roots
+
+
+def _allowed_path_roots() -> list[Path]:
+    raw = os.getenv("WORKER_ALLOWED_PATHS", "")
+    if raw.strip():
+        return [Path(item).expanduser().resolve() for item in _csv_tokens(raw)]
+    return _default_allowed_paths()
+
+
+def _is_command_allowed(command: list[str]) -> tuple[bool, str]:
+    if not command:
+        return False, "empty_command"
+
+    executable = Path(command[0]).name.strip()
+    if not executable:
+        return False, "empty_executable"
+
+    for pattern in _allowed_command_patterns():
+        if fnmatch.fnmatch(executable, pattern):
+            return True, executable
+    return False, executable
+
+
+def _is_path_allowed(path: Path) -> tuple[bool, Path]:
+    resolved = path.expanduser().resolve()
+    for root in _allowed_path_roots():
+        if resolved == root or root in resolved.parents:
+            return True, root
+    return False, resolved
+
+
+def _parse_env_file(path: Path) -> dict[str, str]:
+    if not path.exists() or not path.is_file():
+        return {}
+
+    parsed: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        parsed[key] = value.strip()
+    return parsed
+
+
+def _build_subprocess_env(env_overlay: dict[str, str] | None) -> dict[str, str]:
+    allowlist_raw = os.getenv(
+        "WORKER_SUBPROCESS_ENV_ALLOWLIST",
+        "PATH,HOME,LANG,LC_ALL,LC_CTYPE,PYTHONPATH,VIRTUAL_ENV,TMPDIR",
+    )
+    allowlist = set(_csv_tokens(allowlist_raw))
+
+    env: dict[str, str] = {}
+    for key in allowlist:
+        value = os.environ.get(key)
+        if value is not None:
+            env[key] = value
+
+    preview_env_file = os.getenv("WORKER_PREVIEW_ENV_FILE", "").strip()
+    if preview_env_file:
+        env.update(_parse_env_file(Path(preview_env_file).expanduser()))
+
+    if env_overlay:
+        env.update(env_overlay)
+
+    blocklist_raw = os.getenv(
+        "WORKER_SUBPROCESS_ENV_BLOCKLIST",
+        "DATABASE_URL,REDIS_URL,OPENAI_API_KEY,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,"
+        "GOOGLE_APPLICATION_CREDENTIALS",
+    )
+    for key in _csv_tokens(blocklist_raw):
+        env.pop(key, None)
+
+    return env
 
 
 def build_codex_command(prompt: str, worktree_path: Path) -> list[str]:
@@ -65,6 +177,34 @@ def run_codex_command(
     lease_expired = False
     start = time_fn()
 
+    command_allowed, executable = _is_command_allowed(command)
+    if not command_allowed:
+        output_text = f"Blocked by command allowlist: {executable}"
+        output_path.write_text(output_text, encoding="utf-8")
+        return CommandExecutionResult(
+            exit_code=126,
+            timed_out=False,
+            canceled=False,
+            lease_expired=False,
+            duration_seconds=max(0.0, time_fn() - start),
+            output_path=output_path,
+            output_excerpt=[output_text],
+        )
+
+    path_allowed, blocked_value = _is_path_allowed(worktree_path)
+    if not path_allowed:
+        output_text = f"Blocked by path allowlist: {blocked_value}"
+        output_path.write_text(output_text, encoding="utf-8")
+        return CommandExecutionResult(
+            exit_code=126,
+            timed_out=False,
+            canceled=False,
+            lease_expired=False,
+            duration_seconds=max(0.0, time_fn() - start),
+            output_path=output_path,
+            output_excerpt=[output_text],
+        )
+
     try:
         process = popen_factory(
             command,
@@ -72,7 +212,7 @@ def run_codex_command(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            env={**os.environ, **(env or {})},
+            env=_build_subprocess_env(env),
         )
     except OSError as exc:
         output_text = f"Failed to start command: {exc}"

@@ -32,6 +32,7 @@ This repository contains the initial runtime boundaries for the Codex Builder Co
    - `docs/deployment-flow.md`
    - `docs/preview-runtime-slots.md`
    - `docs/preview-smoke-e2e-harness.md`
+   - `docs/worker-security-guardrails.md`
    - `docs/db-bootstrap-and-migrations.md`
    - `docs/run-state-machine-contract.md`
    - `docs/slot-lease-manager-contract.md`

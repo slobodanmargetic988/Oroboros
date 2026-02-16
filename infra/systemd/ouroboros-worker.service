@@ -5,13 +5,25 @@ Wants=redis.service
 
 [Service]
 Type=simple
-User=oroboros
-Group=oroboros
+User=oroboros-worker
+Group=oroboros-worker
 WorkingDirectory=/srv/oroboros/current/worker
 EnvironmentFile=/etc/oroboros/worker.env
 ExecStart=/srv/oroboros/current/worker/.venv/bin/python -m worker.main
 Restart=always
 RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/srv/oroboros/worktrees /srv/oroboros/artifacts /tmp
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target
