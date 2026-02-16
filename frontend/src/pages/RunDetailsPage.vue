@@ -4,7 +4,7 @@
       <div>
         <p class="eyebrow">Codex Run</p>
         <h1>Run Details</h1>
-        <p class="subhead">Timeline, validation checks, logs, and artifacts for a single run.</p>
+        <p class="subhead">Timeline, validation checks, logs, artifacts, and review decisions for a single run.</p>
       </div>
       <RouterLink class="back-link" to="/codex">Back to Inbox</RouterLink>
     </header>
@@ -39,11 +39,62 @@
     </section>
 
     <section class="panel">
+      <h2>Change Review</h2>
+      <div class="review-grid">
+        <div>
+          <h3>File Diff View</h3>
+          <ul v-if="fileDiffEntries.length" class="diff-list">
+            <li v-for="entry in fileDiffEntries" :key="`${entry.source}:${entry.path}`" class="diff-item">
+              <div class="diff-item-head">
+                <code>{{ entry.path }}</code>
+                <span class="diff-stats">
+                  <span class="stat-add">+{{ entry.additions ?? 0 }}</span>
+                  <span class="stat-del">-{{ entry.deletions ?? 0 }}</span>
+                </span>
+              </div>
+              <p class="diff-source">Source: {{ entry.source }}</p>
+              <details v-if="entry.patch" class="diff-patch">
+                <summary>Show patch snippet</summary>
+                <pre>{{ entry.patch }}</pre>
+              </details>
+            </li>
+          </ul>
+          <p v-else class="empty">No file-level diff payload found yet for this run.</p>
+        </div>
+
+        <div class="migration-panel" :class="migrationWarning ? 'migration-warning' : 'migration-safe'">
+          <h3>Migration Warning</h3>
+          <p v-if="migrationWarning">
+            Migration-related files are present in the diff. Require explicit DB review before merge.
+          </p>
+          <p v-else>No migration files detected in current diff payload.</p>
+
+          <ul v-if="migrationFiles.length" class="migration-list">
+            <li v-for="path in migrationFiles" :key="path">
+              <code>{{ path }}</code>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>Failure Reasons</h2>
       <ul v-if="failureReasons.length" class="failure-list">
         <li v-for="reason in failureReasons" :key="reason">{{ reason }}</li>
       </ul>
       <p v-else class="empty">No failure reasons recorded for this run.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Checks Summary</h2>
+      <div class="checks-summary-row">
+        <span class="summary-chip summary-chip-neutral">Total {{ checksSummary.total }}</span>
+        <span class="summary-chip summary-chip-success">Passed {{ checksSummary.passed }}</span>
+        <span class="summary-chip summary-chip-danger">Failed {{ checksSummary.failed }}</span>
+        <span class="summary-chip summary-chip-warn">Running {{ checksSummary.running }}</span>
+        <span class="summary-chip summary-chip-neutral">Pending {{ checksSummary.pending }}</span>
+      </div>
     </section>
 
     <section class="panel">
@@ -65,6 +116,64 @@
         </li>
       </ul>
       <p v-else class="empty">No validation checks found for this run.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Approval Actions</h2>
+      <p class="approval-status">
+        Current run status:
+        <strong>{{ run?.status ?? "unknown" }}</strong>
+        <span v-if="!canSubmitDecision"> (Approve/Reject enabled only in <code>needs_approval</code>.)</span>
+      </p>
+
+      <div class="approval-form-grid">
+        <label>
+          Reviewer ID (optional)
+          <input v-model="reviewerId" type="text" placeholder="reviewer user id" />
+        </label>
+
+        <label>
+          Approve reason (optional)
+          <textarea v-model="approveReason" rows="2" placeholder="Reason for approval" />
+        </label>
+
+        <label>
+          Reject reason (required for reject)
+          <textarea v-model="rejectReason" rows="2" placeholder="Reason for rejection" />
+        </label>
+
+        <label>
+          Failure reason code
+          <select v-model="rejectFailureReasonCode">
+            <option v-for="code in failureReasonCodes" :key="code" :value="code">{{ code }}</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="decision-actions">
+        <button class="btn-approve" :disabled="!canSubmitDecision || actionBusy" @click="approveRun">
+          {{ actionBusy ? "Submitting..." : "Approve Run" }}
+        </button>
+        <button class="btn-reject" :disabled="!canSubmitDecision || actionBusy" @click="rejectRun">
+          {{ actionBusy ? "Submitting..." : "Reject Run" }}
+        </button>
+      </div>
+
+      <p v-if="actionError" class="error">{{ actionError }}</p>
+      <p v-if="actionSuccess" class="success">{{ actionSuccess }}</p>
+
+      <h3>Decision History</h3>
+      <ul v-if="approvals.length" class="approvals-list">
+        <li v-for="approval in approvals" :key="approval.id" class="approval-item">
+          <div class="approval-top">
+            <span :class="statusChipClass(approval.decision)">{{ approval.decision }}</span>
+            <span>{{ formatDateTime(approval.created_at) }}</span>
+          </div>
+          <p class="approval-meta">Reviewer: {{ approval.reviewer_id || "n/a" }}</p>
+          <p v-if="approval.reason" class="approval-reason">{{ approval.reason }}</p>
+        </li>
+      </ul>
+      <p v-else class="empty">No approvals/rejections recorded for this run yet.</p>
     </section>
 
     <section class="panel">
@@ -105,11 +214,23 @@ import { useRoute } from "vue-router";
 import {
   extractArtifactLinks,
   extractFailureReasons,
+  extractFileDiffEntries,
+  hasMigrationWarning,
   RunEventItem,
   RunItem,
   statusChipClass,
+  summarizeChecks,
   ValidationCheckItem,
 } from "../lib/runs";
+
+interface ApprovalItem {
+  id: number;
+  run_id: string;
+  reviewer_id: string | null;
+  decision: string;
+  reason: string | null;
+  created_at: string;
+}
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -117,15 +238,48 @@ const route = useRoute();
 const run = ref<RunItem | null>(null);
 const events = ref<RunEventItem[]>([]);
 const checks = ref<ValidationCheckItem[]>([]);
+const approvals = ref<ApprovalItem[]>([]);
 const loading = ref(true);
 const loadError = ref("");
 const lastSync = ref<Date | null>(null);
+
+const reviewerId = ref("");
+const approveReason = ref("");
+const rejectReason = ref("");
+const rejectFailureReasonCode = ref("POLICY_REJECTED");
+const actionBusy = ref(false);
+const actionError = ref("");
+const actionSuccess = ref("");
+
+const failureReasonCodes = [
+  "WAITING_FOR_SLOT",
+  "VALIDATION_FAILED",
+  "CHECKS_FAILED",
+  "MERGE_CONFLICT",
+  "MIGRATION_FAILED",
+  "DEPLOY_HEALTHCHECK_FAILED",
+  "AGENT_TIMEOUT",
+  "AGENT_CANCELED",
+  "PREVIEW_EXPIRED",
+  "POLICY_REJECTED",
+  "UNKNOWN_ERROR",
+];
 
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 
 const runId = computed(() => String(route.params.runId ?? ""));
 const artifactLinks = computed(() => extractArtifactLinks(checks.value, events.value));
 const failureReasons = computed(() => extractFailureReasons(events.value, checks.value));
+const fileDiffEntries = computed(() => extractFileDiffEntries(events.value));
+const migrationWarning = computed(() => hasMigrationWarning(fileDiffEntries.value));
+const migrationFiles = computed(() => {
+  const paths = fileDiffEntries.value
+    .map((entry) => entry.path)
+    .filter((path) => /(alembic|migrations?|migration|\.sql$)/i.test(path));
+  return [...new Set(paths)];
+});
+const checksSummary = computed(() => summarizeChecks(checks.value));
+const canSubmitDecision = computed(() => run.value?.status === "needs_approval");
 const lastSyncLabel = computed(() => (lastSync.value ? lastSync.value.toLocaleTimeString() : "not yet"));
 
 function formatDateTime(value: string | null | undefined): string {
@@ -176,6 +330,23 @@ async function fetchJson<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function postJson<T>(url: string, payload: Record<string, unknown>): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Request failed (${response.status}) for ${url}: ${detail}`);
+  }
+
+  return (await response.json()) as T;
+}
+
 async function refreshDetails(options?: { silent?: boolean }) {
   const silent = options?.silent ?? false;
   if (!runId.value) {
@@ -189,15 +360,17 @@ async function refreshDetails(options?: { silent?: boolean }) {
   loadError.value = "";
 
   try {
-    const [runPayload, eventsPayload, checksPayload] = await Promise.all([
+    const [runPayload, eventsPayload, checksPayload, approvalsPayload] = await Promise.all([
       fetchJson<RunItem>(`${apiBaseUrl}/api/runs/${runId.value}`),
       fetchJson<RunEventItem[]>(`${apiBaseUrl}/api/runs/${runId.value}/events`),
       fetchJson<ValidationCheckItem[]>(`${apiBaseUrl}/api/runs/${runId.value}/checks`),
+      fetchJson<ApprovalItem[]>(`${apiBaseUrl}/api/runs/${runId.value}/approvals`),
     ]);
 
     run.value = runPayload;
     events.value = eventsPayload;
     checks.value = checksPayload;
+    approvals.value = approvalsPayload;
     lastSync.value = new Date();
   } catch (error) {
     loadError.value = (error as Error).message;
@@ -205,6 +378,81 @@ async function refreshDetails(options?: { silent?: boolean }) {
     if (!silent) {
       loading.value = false;
     }
+  }
+}
+
+async function approveRun() {
+  if (!run.value) {
+    return;
+  }
+
+  actionError.value = "";
+  actionSuccess.value = "";
+
+  if (!canSubmitDecision.value) {
+    actionError.value = "Run must be in needs_approval state before approving.";
+    return;
+  }
+
+  if (!window.confirm("Approve this run and move it to approved state?")) {
+    return;
+  }
+
+  actionBusy.value = true;
+  try {
+    await postJson<ApprovalItem>(`${apiBaseUrl}/api/runs/${run.value.id}/approve`, {
+      reviewer_id: reviewerId.value.trim() || undefined,
+      reason: approveReason.value.trim() || undefined,
+    });
+
+    actionSuccess.value = "Run approved successfully.";
+    rejectReason.value = "";
+    await refreshDetails({ silent: true });
+  } catch (error) {
+    actionError.value = (error as Error).message;
+  } finally {
+    actionBusy.value = false;
+  }
+}
+
+async function rejectRun() {
+  if (!run.value) {
+    return;
+  }
+
+  actionError.value = "";
+  actionSuccess.value = "";
+
+  if (!canSubmitDecision.value) {
+    actionError.value = "Run must be in needs_approval state before rejecting.";
+    return;
+  }
+
+  const reason = rejectReason.value.trim();
+  if (!reason) {
+    actionError.value = "Reject reason is required.";
+    return;
+  }
+
+  if (!window.confirm("Reject this run and mark it failed?")) {
+    return;
+  }
+
+  actionBusy.value = true;
+  try {
+    await postJson<ApprovalItem>(`${apiBaseUrl}/api/runs/${run.value.id}/reject`, {
+      reviewer_id: reviewerId.value.trim() || undefined,
+      reason,
+      failure_reason_code: rejectFailureReasonCode.value,
+    });
+
+    actionSuccess.value = "Run rejected successfully.";
+    approveReason.value = "";
+    await refreshDetails({ silent: true });
+  } catch (error) {
+    actionError.value = (error as Error).message;
+  } finally {
+    actionBusy.value = false;
   }
 }
 
@@ -279,11 +527,23 @@ onUnmounted(() => {
   margin-top: 0;
 }
 
+.panel h3 {
+  margin: 0.35rem 0 0.6rem;
+  font-size: 0.95rem;
+}
+
 .panel-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 0.8rem;
+}
+
+button,
+textarea,
+input,
+select {
+  font: inherit;
 }
 
 button {
@@ -293,7 +553,6 @@ button {
   border-radius: 10px;
   padding: 0.55rem 0.9rem;
   cursor: pointer;
-  font: inherit;
 }
 
 button:disabled {
@@ -323,16 +582,27 @@ button:disabled {
   font-size: 0.84rem;
 }
 
+.review-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: 1.7fr 1fr;
+}
+
+.diff-list,
 .checks-list,
 .artifact-list,
-.failure-list {
+.failure-list,
+.approvals-list,
+.migration-list {
   margin: 0;
   padding-left: 1.2rem;
   display: grid;
   gap: 0.55rem;
 }
 
-.check-item {
+.diff-item,
+.check-item,
+.approval-item {
   border: 1px solid #dbeafe;
   border-radius: 10px;
   padding: 0.7rem;
@@ -340,11 +610,105 @@ button:disabled {
   list-style: none;
 }
 
-.check-top {
+.diff-item-head,
+.check-top,
+.approval-top {
   display: flex;
   justify-content: space-between;
   gap: 0.6rem;
   align-items: center;
+}
+
+.diff-stats {
+  display: inline-flex;
+  gap: 0.35rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.82rem;
+}
+
+.stat-add {
+  color: #166534;
+}
+
+.stat-del {
+  color: #991b1b;
+}
+
+.diff-source,
+.approval-meta {
+  margin: 0.35rem 0 0;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.diff-patch {
+  margin-top: 0.45rem;
+}
+
+.diff-patch pre {
+  margin: 0.45rem 0 0;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 0.6rem;
+  overflow: auto;
+  font-size: 0.78rem;
+}
+
+.migration-panel {
+  border-radius: 10px;
+  padding: 0.8rem;
+  border: 1px solid;
+}
+
+.migration-warning {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.migration-safe {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.checks-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.summary-chip {
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.summary-chip-neutral {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.summary-chip-success {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.summary-chip-warn {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.summary-chip-danger {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #991b1b;
 }
 
 .check-meta {
@@ -354,6 +718,50 @@ button:disabled {
   margin: 0.45rem 0;
   color: #64748b;
   font-size: 0.82rem;
+}
+
+.approval-form-grid {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.6rem;
+}
+
+.approval-form-grid label {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.approval-form-grid textarea,
+.approval-form-grid input,
+.approval-form-grid select {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  background: #f8fafc;
+}
+
+.approval-status {
+  margin: 0;
+  color: #334155;
+}
+
+.decision-actions {
+  margin-top: 0.8rem;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.btn-approve {
+  background: #166534;
+}
+
+.btn-reject {
+  background: #b91c1c;
+}
+
+.approval-reason {
+  margin: 0.35rem 0 0;
 }
 
 .artifact-source {
@@ -439,8 +847,19 @@ button:disabled {
 }
 
 .error {
-  margin: 0 0 0.5rem;
+  margin: 0.55rem 0 0;
   color: #b91c1c;
+}
+
+.success {
+  margin: 0.55rem 0 0;
+  color: #166534;
+}
+
+@media (max-width: 900px) {
+  .review-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 800px) {
