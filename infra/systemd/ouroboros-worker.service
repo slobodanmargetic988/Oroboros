@@ -7,9 +7,9 @@ Wants=redis.service
 Type=simple
 User=oroboros
 Group=oroboros
-WorkingDirectory=/srv/oroboros/worker
+WorkingDirectory=/srv/oroboros/current/worker
 EnvironmentFile=/etc/oroboros/worker.env
-ExecStart=/srv/oroboros/worker/.venv/bin/python -m worker.main
+ExecStart=/srv/oroboros/current/worker/.venv/bin/python -m worker.main
 Restart=always
 RestartSec=3
 

@@ -10,7 +10,7 @@ This project uses Alembic for control-plane schema migrations.
 ## Baseline Schema
 - Migration root: `backend/alembic/`
 - Initial migration: `backend/alembic/versions/20260216_0001_initial_control_plane.py`
-- Preview DB reset tracking migration: `backend/alembic/versions/20260216_0002_preview_db_resets.py`
+- Preview DB reset tracking migration: `backend/alembic/versions/20260216_0003_preview_db_resets.py`
 
 The baseline creates the MVP control-plane entities:
 - `users`

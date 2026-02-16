@@ -19,13 +19,19 @@ This repository contains the initial runtime boundaries for the Codex Builder Co
    - `./scripts/db-bootstrap.sh`
 3. Install runtime unit files and env templates:
    - `./scripts/systemd-install-runtime.sh`
-4. Start base runtime topology:
+4. Deploy an exact commit with atomic release switch (creates `/srv/oroboros/current`):
+   - `./scripts/deploy.sh <commit_sha>`
+5. Start base runtime topology:
    - `./scripts/runtime-up.sh`
-5. Verify core service health checks:
+6. Verify core service health checks:
    - `./scripts/runtime-health-check.sh`
-6. Read topology and operation guides:
+7. Run preview smoke/E2E harness (headless):
+   - `./scripts/preview-smoke-e2e.sh --preview-url <preview_url>`
+8. Read topology and operation guides:
    - `docs/runtime-topology.md`
+   - `docs/deployment-flow.md`
    - `docs/preview-runtime-slots.md`
+   - `docs/preview-smoke-e2e-harness.md`
    - `docs/db-bootstrap-and-migrations.md`
    - `docs/run-state-machine-contract.md`
    - `docs/slot-lease-manager-contract.md`

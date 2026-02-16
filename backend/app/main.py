@@ -5,6 +5,7 @@ from app.api.approvals import router as approvals_router
 from app.api.checks import router as checks_router
 from app.api.events import router as events_router
 from app.api.health import router as health_router
+from app.api.releases import router as releases_router
 from app.api.runs import router as runs_router
 from app.api.slots import router as slots_router
 from app.api.worktrees import router as worktrees_router
@@ -20,3 +21,4 @@ app.include_router(events_router)
 app.include_router(checks_router)
 app.include_router(artifacts_router)
 app.include_router(approvals_router)
+app.include_router(releases_router)

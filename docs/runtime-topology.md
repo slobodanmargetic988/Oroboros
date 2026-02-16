@@ -15,6 +15,7 @@ This document defines the host-native process topology for:
 - Baseline process manager: **systemd**
 - Unit files: `infra/systemd/*.service`
 - Env files: `infra/systemd/env/*.env` (installed to `/etc/oroboros/`)
+- Runtime code path: `/srv/oroboros/current` (atomic release symlink target)
 
 ## Service Topology
 
@@ -52,7 +53,7 @@ Preview slot-specific provisioning/health contract:
   - `WORKER_POLL_INTERVAL_SECONDS=5`
   - `WORKER_HEALTH_PORT=8090`
 - Web surfaces (`/etc/oroboros/web-*.env`):
-  - `WEB_ROOT=<static_root>`
+  - `WEB_ROOT=/srv/oroboros/current/infra/<web-root>`
   - `WEB_PORT=<3100..3103>`
 
 ## Health Endpoints
@@ -66,6 +67,27 @@ Preview slot-specific provisioning/health contract:
 - `redis`: `redis-cli -h 127.0.0.1 ping`
 
 Use `scripts/runtime-health-check.sh` for one-command verification.
+
+## Scripted Deploy (MYO-26)
+- Command: `./scripts/deploy.sh <commit_sha>`
+- Release path: `/srv/oroboros/releases/<commit_sha>`
+- Atomic switch: `/srv/oroboros/current`
+- Health gate: `scripts/runtime-health-check.sh` (rollback on failure)
+- Full flow: `docs/deployment-flow.md`
+
+## Scripted Rollback (MYO-28)
+- Command: `./scripts/rollback.sh <release_id>`
+- Target: existing host release at `/srv/oroboros/releases/<release_id>`
+- Atomic switch: `/srv/oroboros/current`
+- Health gate: `scripts/runtime-health-check.sh` (restore previous target on failure)
+- Release registry updates recorded in control-plane DB (`releases` table)
+
+## Preview Smoke/E2E Harness (MYO-32)
+- Command: `./scripts/preview-smoke-e2e.sh --preview-url <preview_url>`
+- Changed routes: add repeated `--changed-route /path`
+- Host-routed local execution: add `--proxy-origin http://127.0.0.1:8088`
+- Output: machine-readable JSON artifact and stdout summary for validation pipeline use
+- Optional persistence: `--run-id <run_id> --persist-validation` stores records in `validation_checks` + `run_artifacts`
 
 ## Non-container Constraint
 This topology intentionally avoids Docker/Compose/Kubernetes and runs services directly as host processes under `systemd`.
