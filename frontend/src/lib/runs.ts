@@ -84,6 +84,8 @@ export interface RunListResponse {
 
 const artifactHintPattern = /(artifact|log|uri|url|report|output)/i;
 const diffHintPattern = /(diff|patch|file|change|modified|updated)/i;
+const diffPathKeyPattern = /(path|file|filename|name|target_file|old_path|new_path)/i;
+const diffPatchKeyPattern = /^(patch|diff|snippet)$/i;
 
 export function statusChipClass(status: RunStatus): string {
   const normalized = status.toLowerCase();
@@ -252,7 +254,17 @@ function toInteger(value: unknown): number | null {
 }
 
 function looksLikePath(value: string): boolean {
-  return value.includes("/") || value.includes(".");
+  const normalized = value.trim();
+  if (!normalized) {
+    return false;
+  }
+  if (normalized.includes("\n") || normalized.includes("\r")) {
+    return false;
+  }
+  if (normalized.startsWith("@@ ") || normalized.startsWith("diff --git ")) {
+    return false;
+  }
+  return normalized.includes("/") || normalized.includes(".");
 }
 
 function toPathFromRecord(record: Record<string, unknown>): string | null {
@@ -319,8 +331,17 @@ export function extractFileDiffEntries(events: RunEventItem[]): FileDiffEntry[] 
       Object.entries(value).forEach(([key, nested]) => {
         const hint = inheritedHint || diffHintPattern.test(key);
 
-        if (typeof nested === "string" && hint && looksLikePath(nested)) {
-          pushUnique(toDiffEntry(nested, source));
+        if (typeof nested === "string") {
+          if (diffPatchKeyPattern.test(key)) {
+            return;
+          }
+          if (
+            hint &&
+            diffPathKeyPattern.test(key) &&
+            looksLikePath(nested)
+          ) {
+            pushUnique(toDiffEntry(nested.trim(), source));
+          }
           return;
         }
 

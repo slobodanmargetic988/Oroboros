@@ -139,6 +139,33 @@ describe("extractFileDiffEntries", () => {
     expect(entries[0]?.path).toBe("backend/alembic/versions/20260216_0002_preview_db_resets.py");
     expect(entries[1]?.patch).toContain("@@");
   });
+
+  it("does not treat unified patch text as file-path entries", () => {
+    const entries = extractFileDiffEntries([
+      {
+        id: 2,
+        run_id: "run-2",
+        event_type: "diff_generated",
+        status_from: "editing",
+        status_to: "testing",
+        payload: {
+          diff: {
+            files: [
+              {
+                path: "frontend/src/pages/RunDetailsPage.vue",
+                patch: "@@ -1,3 +1,5 @@\n+ touched backend/alembic/versions/20260216_0003_preview_db_resets.py",
+              },
+            ],
+          },
+        },
+        created_at: "2026-02-16T00:00:00Z",
+      },
+    ]);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.path).toBe("frontend/src/pages/RunDetailsPage.vue");
+    expect(hasMigrationWarning(entries)).toBe(false);
+  });
 });
 
 describe("hasMigrationWarning", () => {
