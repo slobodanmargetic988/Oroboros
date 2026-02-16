@@ -626,6 +626,10 @@ class WorkerOrchestrator:
             "exit_code": result.exit_code,
             "timed_out": result.timed_out,
         }
+        if failure_reason == FailureReasonCode.AGENT_TIMEOUT:
+            payload["recoverable"] = True
+            payload["recovery_strategy"] = "create_child_run"
+            payload["resume_endpoint"] = f"/api/runs/{run.id}/resume"
         if extra_payload:
             payload.update(extra_payload)
         failure_audit_action = None
@@ -662,6 +666,9 @@ class WorkerOrchestrator:
                 "source": "worker",
                 "reason": FailureReasonCode.PREVIEW_EXPIRED.value,
                 "lease_expired": result.lease_expired,
+                "recoverable": True,
+                "recovery_strategy": "create_child_run",
+                "resume_endpoint": f"/api/runs/{run.id}/resume",
             },
             actor_id=run.created_by,
         )

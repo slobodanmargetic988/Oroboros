@@ -216,6 +216,45 @@ class ValidationPipelineTests(unittest.TestCase):
             self.assertEqual(failed_event.payload.get("failure_reason_code"), "CHECKS_FAILED")
             self.assertEqual(failed_event.payload.get("failed_check"), "lint")
 
+    def test_timeout_failure_includes_resume_recovery_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as artifact_root, patch.dict(
+            os.environ,
+            {
+                "WORKER_REQUIRED_CHECKS": "lint",
+                "WORKER_ARTIFACT_ROOT": artifact_root,
+            },
+            clear=False,
+        ), patch.object(worker_orchestrator, "SessionLocal", self.session_factory), patch.object(
+            worker_orchestrator, "acquire_slot_lease", side_effect=self._fake_acquire_slot_lease
+        ), patch.object(worker_orchestrator, "assign_worktree", side_effect=self._fake_assign_worktree), patch.object(
+            worker_orchestrator, "run_codex_command", side_effect=self._make_fake_runner([{"timed_out": True}])
+        ), patch.object(worker_orchestrator, "build_codex_command", return_value=["codex", "run"]):
+            orchestrator = worker_orchestrator.WorkerOrchestrator()
+            processed = orchestrator.process_next_run()
+
+        self.assertTrue(processed)
+
+        with self.session_factory() as db:
+            run = db.query(Run).filter(Run.id == self.run_id).first()
+            self.assertIsNotNone(run)
+            self.assertEqual(run.status, "failed")
+
+            failed_event = (
+                db.query(RunEvent)
+                .filter(
+                    RunEvent.run_id == self.run_id,
+                    RunEvent.event_type == "status_transition",
+                    RunEvent.status_to == "failed",
+                )
+                .order_by(RunEvent.id.desc())
+                .first()
+            )
+            self.assertIsNotNone(failed_event)
+            self.assertEqual(failed_event.payload.get("failure_reason_code"), "AGENT_TIMEOUT")
+            self.assertTrue(failed_event.payload.get("recoverable"))
+            self.assertEqual(failed_event.payload.get("recovery_strategy"), "create_child_run")
+            self.assertEqual(failed_event.payload.get("resume_endpoint"), f"/api/runs/{self.run_id}/resume")
+
 
 if __name__ == "__main__":
     unittest.main()
