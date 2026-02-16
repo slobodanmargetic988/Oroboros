@@ -244,6 +244,10 @@ async function refreshRuns() {
   if (statusFilter.value) {
     params.append("status", statusFilter.value);
   }
+  const filterRoute = routeFilter.value.trim();
+  if (filterRoute) {
+    params.append("route", normalizeRoutePath(filterRoute));
+  }
 
   const response = await fetch(`${apiBaseUrl}/api/runs?${params.toString()}`);
   if (!response.ok) {
@@ -260,17 +264,26 @@ async function refreshRuns() {
 
 function applyCurrentRouteFilter() {
   routeFilter.value = currentRoutePath.value;
+  offset.value = 0;
+  void refreshRuns();
 }
 
 function clearRouteFilter() {
+  if (!routeFilter.value) {
+    return;
+  }
   routeFilter.value = "";
+  offset.value = 0;
+  void refreshRuns();
 }
 
 function syncRouteFilterFromQuery() {
   const value = viewRoute.query.route;
   if (typeof value === "string" && value.trim()) {
     routeFilter.value = normalizeRoutePath(value);
+    return;
   }
+  routeFilter.value = "";
 }
 
 async function nextPage() {
@@ -301,6 +314,8 @@ watch(
   () => viewRoute.query.route,
   () => {
     syncRouteFilterFromQuery();
+    offset.value = 0;
+    void refreshRuns();
   },
 );
 
