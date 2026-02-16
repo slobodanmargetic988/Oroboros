@@ -13,10 +13,11 @@ Worker subprocess execution is blocked unless command executable matches allowli
 
 Configuration:
 - `WORKER_ALLOWED_COMMANDS`
-  - Default: `codex,python,python*,bash,sh,git,npm,node`
+  - Default: `codex,python,python*,git,npm,node`
 
 Behavior:
 - Disallowed commands are refused before process spawn.
+- Shell wrappers (`bash`, `sh`, `zsh`, `dash`, `ksh`, `fish`) are always denied to prevent allowlist bypass via `-c` payloads.
 - Return code is `126` with a policy message in artifact output.
 
 ## 3) Worktree path allowlist enforcement

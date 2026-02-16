@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 import shlex
 import subprocess
-import tempfile
 import time
 from typing import Callable
 
@@ -39,8 +38,6 @@ def _default_allowed_commands() -> list[str]:
         "codex",
         "python",
         "python*",
-        "bash",
-        "sh",
         "git",
         "npm",
         "node",
@@ -59,7 +56,6 @@ def _default_allowed_paths() -> list[Path]:
     configured_root = os.getenv("WORKER_WORKTREE_ROOT", "/srv/oroboros/worktrees").strip()
     if configured_root:
         roots.append(Path(configured_root).expanduser().resolve())
-    roots.append(Path(tempfile.gettempdir()).resolve())
     return roots
 
 
@@ -77,6 +73,8 @@ def _is_command_allowed(command: list[str]) -> tuple[bool, str]:
     executable = Path(command[0]).name.strip()
     if not executable:
         return False, "empty_executable"
+    if executable in {"bash", "sh", "zsh", "dash", "ksh", "fish"}:
+        return False, executable
 
     for pattern in _allowed_command_patterns():
         if fnmatch.fnmatch(executable, pattern):

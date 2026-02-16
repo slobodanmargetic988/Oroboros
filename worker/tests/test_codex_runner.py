@@ -33,8 +33,12 @@ class BuildCodexCommandTests(unittest.TestCase):
 
 
 class RunCodexCommandTests(unittest.TestCase):
+    @staticmethod
+    def _allow_worktree(path: str):
+        return patch.dict(os.environ, {"WORKER_ALLOWED_PATHS": path}, clear=False)
+
     def test_capture_stdout_to_artifact(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, self._allow_worktree(tmp):
             output_path = Path(tmp) / "run.log"
             result = run_codex_command(
                 command=[sys.executable, "-c", "print('worker-output')"],
@@ -51,7 +55,7 @@ class RunCodexCommandTests(unittest.TestCase):
             self.assertIn("worker-output", output_path.read_text(encoding="utf-8"))
 
     def test_timeout_kills_process(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, self._allow_worktree(tmp):
             output_path = Path(tmp) / "timeout.log"
             result = run_codex_command(
                 command=[sys.executable, "-c", "import time; time.sleep(2)"],
@@ -64,7 +68,7 @@ class RunCodexCommandTests(unittest.TestCase):
             self.assertTrue(result.timed_out)
 
     def test_cancel_stops_process(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, self._allow_worktree(tmp):
             output_path = Path(tmp) / "cancel.log"
             ticks = {"count": 0}
 
@@ -84,7 +88,7 @@ class RunCodexCommandTests(unittest.TestCase):
             self.assertTrue(result.canceled)
 
     def test_on_tick_run_canceled_signal(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, self._allow_worktree(tmp):
             output_path = Path(tmp) / "cancel-signal.log"
 
             def on_tick() -> None:
@@ -102,7 +106,7 @@ class RunCodexCommandTests(unittest.TestCase):
             self.assertTrue(result.canceled)
 
     def test_on_tick_lease_expired_signal(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, self._allow_worktree(tmp):
             output_path = Path(tmp) / "lease-expired.log"
 
             def on_tick() -> None:
@@ -120,7 +124,7 @@ class RunCodexCommandTests(unittest.TestCase):
             self.assertTrue(result.lease_expired)
 
     def test_process_start_failure_returns_failed_result(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, self._allow_worktree(tmp):
             output_path = Path(tmp) / "start-failed.log"
 
             def failing_popen(*args, **kwargs):  # noqa: ANN002, ANN003
@@ -142,7 +146,7 @@ class RunCodexCommandTests(unittest.TestCase):
             self.assertIn("Failed to start command", output_path.read_text(encoding="utf-8"))
 
     def test_env_overlay_is_passed_to_command(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, self._allow_worktree(tmp):
             output_path = Path(tmp) / "env.log"
             result = run_codex_command(
                 command=[sys.executable, "-c", "import os; print(os.getenv('TRACE_ID', 'missing'))"],
@@ -161,10 +165,28 @@ class RunCodexCommandTests(unittest.TestCase):
             os.environ,
             {"WORKER_ALLOWED_COMMANDS": "python,python3"},
             clear=False,
-        ):
+        ), self._allow_worktree(tmp):
             output_path = Path(tmp) / "blocked-command.log"
             result = run_codex_command(
                 command=["bash", "-lc", "echo nope"],
+                worktree_path=Path(tmp),
+                output_path=output_path,
+                timeout_seconds=5,
+                poll_interval_seconds=0.05,
+            )
+
+            self.assertEqual(result.exit_code, 126)
+            self.assertIn("Blocked by command allowlist", output_path.read_text(encoding="utf-8"))
+
+    def test_shell_wrappers_are_blocked_even_if_allowlisted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {"WORKER_ALLOWED_COMMANDS": "python,python3,bash,sh"},
+            clear=False,
+        ), self._allow_worktree(tmp):
+            output_path = Path(tmp) / "blocked-shell.log"
+            result = run_codex_command(
+                command=["bash", "-lc", "uname -s"],
                 worktree_path=Path(tmp),
                 output_path=output_path,
                 timeout_seconds=5,
@@ -200,7 +222,7 @@ class RunCodexCommandTests(unittest.TestCase):
                 "WORKER_SUBPROCESS_ENV_ALLOWLIST": "PATH",
             },
             clear=False,
-        ):
+        ), self._allow_worktree(tmp):
             output_path = Path(tmp) / "env-isolation.log"
             result = run_codex_command(
                 command=[
