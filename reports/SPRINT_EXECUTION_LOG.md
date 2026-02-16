@@ -4,7 +4,7 @@ Generated: 2026-02-16 11:11 UTC
 | Issue | Lane | Depends On | Linear Status | Lock State | status | substatus | next_handoff |
 |---|---|---|---|---|---|---|---|
 | MYO-14 | Prep | - | Human Review | unlocked-for-human | READY_FOR_REVIEW | codex_review_ready | human reviewer -> Done or rework |
-| MYO-15 | Prep | MYO-14 | Todo | blocked | BLOCKED |  | backend-developer after MYO-14 Done |
+| MYO-15 | Prep | MYO-14 | Agent working | blocked | BLOCKED |  | backend-developer (rework: attach Docker-enabled integration evidence) |
 | MYO-16 | Prep | MYO-15 | Todo | blocked | BLOCKED |  | backend-developer |
 | MYO-17 | Prep | MYO-16 | Todo | blocked | BLOCKED |  | backend-developer |
 | MYO-18 | A1 | MYO-17 | Todo | blocked | BLOCKED |  | backend-developer |
