@@ -308,6 +308,8 @@ class WorkerOrchestrator:
                     payload={"source": "worker", "check": "codex_cli_execution"},
                 )
             )
+            # Release the row lock acquired by claim before long-running validation checks.
+            db.commit()
 
             validation_result = self._run_validation_pipeline(
                 db=db,
@@ -316,6 +318,10 @@ class WorkerOrchestrator:
                 should_cancel=should_cancel,
                 on_tick=on_tick,
             )
+            run = db.query(Run).filter(Run.id == claimed.run_id).with_for_update().first()
+            if run is None:
+                db.rollback()
+                return
             if not validation_result.ok:
                 failed_result = validation_result.failed_result or result
                 failure_reason = validation_result.failure_reason
