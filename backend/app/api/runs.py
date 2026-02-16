@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import literal, or_
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -98,6 +99,17 @@ def _to_run_response(run: Run, run_context: RunContext | None = None) -> RunResp
     )
 
 
+def _normalize_route_path(route: str) -> str:
+    value = route.strip()
+    if not value:
+        return "/"
+    path_only = value.split("?", 1)[0].split("#", 1)[0]
+    ensured_prefix = path_only if path_only.startswith("/") else f"/{path_only}"
+    if len(ensured_prefix) > 1 and ensured_prefix.endswith("/"):
+        return ensured_prefix[:-1]
+    return ensured_prefix or "/"
+
+
 def _get_run_or_404(db: Session, run_id: str) -> Run:
     run = db.query(Run).filter(Run.id == run_id).first()
     if run is None:
@@ -160,6 +172,7 @@ def create_run(payload: CreateRunRequest, db: Session = Depends(get_db_session))
 @router.get("", response_model=RunListResponse)
 def list_runs(
     status: list[str] | None = Query(default=None),
+    route: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db_session),
@@ -167,6 +180,15 @@ def list_runs(
     query = db.query(Run)
     if status:
         query = query.filter(Run.status.in_(status))
+    if route and route.strip():
+        normalized_route = _normalize_route_path(route)
+        query = query.filter(
+            or_(
+                Run.route == normalized_route,
+                Run.route.like(f"{normalized_route}/%"),
+                literal(normalized_route).like(Run.route + "/%"),
+            )
+        )
 
     total = query.count()
     runs = query.order_by(Run.created_at.desc()).offset(offset).limit(limit).all()

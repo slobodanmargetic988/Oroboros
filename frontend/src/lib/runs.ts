@@ -398,3 +398,45 @@ export function summarizeChecks(checks: ValidationCheckItem[]): ChecksSummary {
 
   return summary;
 }
+
+export function normalizeRoutePath(route: string | null | undefined): string {
+  const value = (route ?? "").trim();
+  if (!value) {
+    return "/";
+  }
+
+  const [pathOnly] = value.split(/[?#]/, 1);
+  const ensuredPrefix = pathOnly.startsWith("/") ? pathOnly : `/${pathOnly}`;
+  if (ensuredPrefix.length > 1 && ensuredPrefix.endsWith("/")) {
+    return ensuredPrefix.slice(0, -1);
+  }
+  return ensuredPrefix || "/";
+}
+
+export function getRunRoute(run: RunItem): string {
+  return normalizeRoutePath(run.context?.route || run.route || "/");
+}
+
+export function isRunRelatedToRoute(runRoute: string, currentRoute: string): boolean {
+  const normalizedRunRoute = normalizeRoutePath(runRoute);
+  const normalizedCurrentRoute = normalizeRoutePath(currentRoute);
+
+  if (normalizedRunRoute === normalizedCurrentRoute) {
+    return true;
+  }
+
+  if (normalizedCurrentRoute.startsWith(`${normalizedRunRoute}/`)) {
+    return true;
+  }
+
+  if (normalizedRunRoute.startsWith(`${normalizedCurrentRoute}/`)) {
+    return true;
+  }
+
+  return false;
+}
+
+export function filterRunsByRoute(runs: RunItem[], route: string | null | undefined): RunItem[] {
+  const normalizedRoute = normalizeRoutePath(route);
+  return runs.filter((run) => isRunRelatedToRoute(getRunRoute(run), normalizedRoute));
+}

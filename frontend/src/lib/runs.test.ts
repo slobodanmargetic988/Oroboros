@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  filterRunsByRoute,
   extractArtifactLinks,
   extractFailureReasons,
   extractFileDiffEntries,
+  getRunRoute,
   hasMigrationWarning,
   makeRunTitle,
+  normalizeRoutePath,
   statusChipClass,
   summarizeChecks,
 } from "./runs";
@@ -231,5 +234,74 @@ describe("summarizeChecks", () => {
       running: 2,
       pending: 0,
     });
+  });
+});
+
+describe("route context helpers", () => {
+  it("normalizes route values with trailing slash and query/hash", () => {
+    expect(normalizeRoutePath("/codex/")).toBe("/codex");
+    expect(normalizeRoutePath("/codex?tab=runs")).toBe("/codex");
+    expect(normalizeRoutePath("codex/runs/abc#section")).toBe("/codex/runs/abc");
+  });
+
+  it("prefers context route when deriving run route", () => {
+    const run = {
+      id: "run-1",
+      title: "Run",
+      prompt: "Prompt",
+      status: "queued",
+      route: "/fallback",
+      created_at: "2026-02-16T00:00:00Z",
+      updated_at: "2026-02-16T00:00:00Z",
+      context: {
+        route: "/codex",
+      },
+    };
+
+    expect(getRunRoute(run)).toBe("/codex");
+  });
+
+  it("filters runs related to current route and nested paths", () => {
+    const runs = [
+      {
+        id: "run-1",
+        title: "Home",
+        prompt: "p1",
+        status: "queued",
+        route: "/",
+        created_at: "2026-02-16T00:00:00Z",
+        updated_at: "2026-02-16T00:00:00Z",
+      },
+      {
+        id: "run-2",
+        title: "Codex",
+        prompt: "p2",
+        status: "queued",
+        route: "/codex",
+        created_at: "2026-02-16T00:00:00Z",
+        updated_at: "2026-02-16T00:00:00Z",
+      },
+      {
+        id: "run-3",
+        title: "Nested",
+        prompt: "p3",
+        status: "queued",
+        route: "/codex/runs/abc",
+        created_at: "2026-02-16T00:00:00Z",
+        updated_at: "2026-02-16T00:00:00Z",
+      },
+      {
+        id: "run-4",
+        title: "Other",
+        prompt: "p4",
+        status: "queued",
+        route: "/settings",
+        created_at: "2026-02-16T00:00:00Z",
+        updated_at: "2026-02-16T00:00:00Z",
+      },
+    ];
+
+    const related = filterRunsByRoute(runs, "/codex");
+    expect(related.map((run) => run.id)).toEqual(["run-2", "run-3"]);
   });
 });
