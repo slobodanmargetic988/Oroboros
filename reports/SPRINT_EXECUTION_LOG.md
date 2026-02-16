@@ -16,7 +16,7 @@ Generated: 2026-02-16 11:32 UTC
 | MYO-36 | A1 | MYO-33 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-39 | A1 | MYO-36 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-19 | A2 | MYO-17 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | /codex UI + runs inbox tester pass on branch `codex/myo-19-codex-page-runs-inbox` |
-| MYO-22 | A2 | MYO-19 | Todo | blocked | BLOCKED |  | frontend-developer | tester gate blocked: awaiting `Agent work DONE` + handoff metadata |
+| MYO-22 | A2 | MYO-19 | Agent work DONE | prepared | READY_FOR_TEST | codex_dev_done | frontend-tester | run-details implementation on branch `codex/myo-22-run-details-view`; ready for tester validation |
 | MYO-25 | A2 | MYO-22 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
 | MYO-29 | A2 | MYO-25 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
 | MYO-31 | A2 | MYO-29 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
