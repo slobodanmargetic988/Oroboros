@@ -119,6 +119,9 @@ class WorkerOrchestrator:
                 )
             )
 
+            # SessionLocal uses autoflush=False; flush lease + status writes so
+            # assign_worktree can validate active slot lease in the same transaction.
+            db.flush()
             assigned = assign_worktree(db=db, run_id=run.id, slot_id=slot_id)
             db.commit()
             db.refresh(run)
