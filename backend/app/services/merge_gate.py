@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.domain.run_state_machine import FailureReasonCode
-from app.models import Release, Run, RunArtifact, RunEvent, ValidationCheck
+from app.models import Release, Run, RunArtifact, ValidationCheck
+from app.services.run_event_log import append_run_event
 
 
 class MergeGateConfigurationError(ValueError):
@@ -205,20 +206,21 @@ def run_merge_gate_checks(db: Session, run: Run) -> MergeGateResult:
                 },
             )
         )
-        db.add(
-            RunEvent(
-                run_id=run.id,
-                event_type="merge_gate_check_finished",
-                payload={
-                    "check_name": check.name,
-                    "status": status,
-                    "artifact_uri": artifact_uri,
-                    "command": check.command,
-                    "exit_code": exit_code,
-                    "timed_out": timed_out,
-                    "expected_commit_sha": expected_commit,
-                },
-            )
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="merge_gate_check_finished",
+            payload={
+                "check_name": check.name,
+                "status": status,
+                "artifact_uri": artifact_uri,
+                "command": check.command,
+                "exit_code": exit_code,
+                "timed_out": timed_out,
+                "expected_commit_sha": expected_commit,
+            },
+            actor_id=run.created_by,
+            audit_action="run.test.final_check_completed",
         )
 
         head_after_check = _git_rev_parse(worktree_path, "HEAD")

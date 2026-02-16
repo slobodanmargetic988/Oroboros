@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import hashlib
-import json
 from pathlib import Path
 import re
 import subprocess
@@ -11,7 +9,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import AuditLog, Run, RunEvent, SlotLease, SlotWorktreeBinding
+from app.models import Run, SlotLease, SlotWorktreeBinding
+from app.services.run_event_log import append_audit_log, append_run_event
 
 BRANCH_PREFIX = "codex/run-"
 ACTIVE_BINDING_STATE = "active"
@@ -55,42 +54,6 @@ def _branch_name_for_run_id(run_id: str) -> str:
 
 def _slot_worktree_path(slot_id: str) -> Path:
     return (_worktree_root_path() / slot_id).resolve()
-
-
-def _hash_payload(payload: dict[str, Any]) -> str:
-    body = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(body.encode("utf-8")).hexdigest()
-
-
-def _add_run_event(
-    db: Session,
-    run_id: str,
-    event_type: str,
-    payload: dict[str, Any] | None = None,
-) -> None:
-    db.add(
-        RunEvent(
-            run_id=run_id,
-            event_type=event_type,
-            payload=payload,
-        )
-    )
-
-
-def _add_audit_log(
-    db: Session,
-    action: str,
-    payload: dict[str, Any],
-    actor_id: str | None = None,
-) -> None:
-    db.add(
-        AuditLog(
-            actor_id=actor_id,
-            action=action,
-            payload_hash=_hash_payload(payload),
-            payload_json=payload,
-        )
-    )
 
 
 def _run_git(
@@ -263,8 +226,8 @@ def assign_worktree(db: Session, run_id: str, slot_id: str) -> dict[str, Any]:
         "worktree_path": resolved_path,
         "reused": reused,
     }
-    _add_run_event(db, run_id=run_id, event_type=event_type, payload=payload)
-    _add_audit_log(db, action=action, payload=payload, actor_id=run.created_by)
+    append_run_event(db, run_id=run_id, event_type=event_type, payload=payload, actor_id=run.created_by)
+    append_audit_log(db, action=action, payload=payload, actor_id=run.created_by)
 
     return {
         "assigned": True,
@@ -324,8 +287,14 @@ def cleanup_worktree(db: Session, slot_id: str, run_id: str | None = None) -> di
         "worktree_path": worktree_path,
     }
     if owning_run_id is not None:
-        _add_run_event(db, run_id=owning_run_id, event_type="worktree_cleaned", payload=payload)
-    _add_audit_log(db, action="worktree.cleanup", payload=payload, actor_id=run.created_by if run else None)
+        append_run_event(
+            db,
+            run_id=owning_run_id,
+            event_type="worktree_cleaned",
+            payload=payload,
+            actor_id=run.created_by if run else None,
+        )
+    append_audit_log(db, action="worktree.cleanup", payload=payload, actor_id=run.created_by if run else None)
 
     return {
         "cleaned": True,

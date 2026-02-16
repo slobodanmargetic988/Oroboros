@@ -19,6 +19,7 @@ from app.domain.run_state_machine import (
 )
 from app.models import Run, RunContext, RunEvent
 from app.services.observability import current_trace_id, emit_structured_log, ensure_trace_id
+from app.services.run_event_log import append_run_event
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -156,21 +157,22 @@ def create_run(
     )
     db.add(run_context)
 
-    db.add(
-        RunEvent(
-            run_id=run.id,
-            event_type="run_created",
-            status_to=RunState.QUEUED.value,
-            payload={
-                "source": "api",
-                "context": {
-                    "route": payload.route,
-                    "note": payload.note,
-                    "metadata": metadata,
-                },
-                "trace_id": trace_id,
+    append_run_event(
+        db,
+        run_id=run.id,
+        event_type="run_created",
+        status_to=RunState.QUEUED.value,
+        payload={
+            "source": "api",
+            "context": {
+                "route": payload.route,
+                "note": payload.note,
+                "metadata": metadata,
             },
-        )
+            "trace_id": trace_id,
+        },
+        actor_id=payload.created_by,
+        audit_action="run.prompt.submitted",
     )
 
     db.commit()
