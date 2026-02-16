@@ -31,13 +31,14 @@ from app.domain.run_state_machine import (  # noqa: E402
     TransitionRuleError,
     ensure_transition_allowed,
 )
-from app.models import Run, RunArtifact, RunEvent, ValidationCheck  # noqa: E402
+from app.models import Run, RunArtifact, RunContext, RunEvent, ValidationCheck  # noqa: E402
 from app.services.git_worktree_manager import assign_worktree  # noqa: E402
 from app.services.slot_lease_manager import (  # noqa: E402
     acquire_slot_lease,
     heartbeat_slot_lease,
     release_slot_lease,
 )
+from .observability import emit_worker_log, generate_trace_id, normalize_trace_id
 
 
 def utcnow() -> datetime:
@@ -50,6 +51,7 @@ class ClaimedRun:
     prompt: str
     slot_id: str
     worktree_path: Path
+    trace_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -181,13 +183,31 @@ class WorkerOrchestrator:
                 self.logger.warning("Unable to claim run %s due to invalid transition", run.id)
                 return None
 
+            run_context = db.query(RunContext).filter(RunContext.run_id == run.id).first()
+            trace_id = None
+            if run_context and isinstance(run_context.metadata_json, dict):
+                trace_id = normalize_trace_id(run_context.metadata_json.get("trace_id"))
+            if not trace_id:
+                trace_id = generate_trace_id()
+            if run_context is None:
+                run_context = RunContext(
+                    run_id=run.id,
+                    route=run.route,
+                    metadata_json={"trace_id": trace_id},
+                )
+                db.add(run_context)
+            elif isinstance(run_context.metadata_json, dict):
+                run_context.metadata_json.setdefault("trace_id", trace_id)
+            else:
+                run_context.metadata_json = {"trace_id": trace_id}
+
             db.add(
                 RunEvent(
                     run_id=run.id,
                     event_type="status_transition",
                     status_from=status_from,
                     status_to=status_to,
-                    payload={"source": "worker", "phase": "claim"},
+                    payload={"source": "worker", "phase": "claim", "trace_id": trace_id},
                 )
             )
 
@@ -197,6 +217,15 @@ class WorkerOrchestrator:
             assigned = assign_worktree(db=db, run_id=run.id, slot_id=slot_id)
             db.commit()
             db.refresh(run)
+            emit_worker_log(
+                event="run_claimed",
+                trace_id=trace_id,
+                run_id=run.id,
+                slot_id=slot_id,
+                commit_sha=run.commit_sha,
+                status_from=status_from,
+                status_to=status_to,
+            )
 
             worktree = assigned.get("worktree_path") or run.worktree_path
             if not worktree:
@@ -207,15 +236,24 @@ class WorkerOrchestrator:
                 prompt=run.prompt,
                 slot_id=slot_id,
                 worktree_path=Path(worktree).expanduser().resolve(),
+                trace_id=trace_id,
             )
 
     def _execute_claimed_run(self, claimed: ClaimedRun) -> None:
-        if not self._mark_editing(claimed.run_id, claimed.slot_id):
+        if not self._mark_editing(claimed.run_id, claimed.slot_id, claimed.trace_id):
             return
 
         output_path = self.artifact_root / claimed.run_id / "codex.stdout.log"
         command = build_codex_command(claimed.prompt, claimed.worktree_path)
         self.logger.info("Executing run %s in %s", claimed.run_id, claimed.worktree_path)
+        emit_worker_log(
+            event="run_execution_started",
+            trace_id=claimed.trace_id,
+            run_id=claimed.run_id,
+            slot_id=claimed.slot_id,
+            worktree_path=str(claimed.worktree_path),
+            command=command,
+        )
 
         last_cancel_check = 0.0
         last_heartbeat = 0.0
@@ -249,6 +287,11 @@ class WorkerOrchestrator:
             poll_interval_seconds=self.poll_interval_seconds,
             should_cancel=should_cancel,
             on_tick=on_tick,
+            env=self._build_execution_env(
+                trace_id=claimed.trace_id,
+                run_id=claimed.run_id,
+                slot_id=claimed.slot_id,
+            ),
         )
         ended_at = utcnow()
 
@@ -265,8 +308,19 @@ class WorkerOrchestrator:
                     RunEvent(
                         run_id=run.id,
                         event_type="run_commit_resolved",
-                        payload={"source": "worker", "commit_sha": commit_sha},
+                        payload={
+                            "source": "worker",
+                            "commit_sha": commit_sha,
+                            "trace_id": claimed.trace_id,
+                        },
                     )
+                )
+                emit_worker_log(
+                    event="run_commit_resolved",
+                    trace_id=claimed.trace_id,
+                    run_id=run.id,
+                    slot_id=claimed.slot_id,
+                    commit_sha=commit_sha,
                 )
 
             self._record_output_artifact(
@@ -277,15 +331,28 @@ class WorkerOrchestrator:
                 output_path=output_path,
                 result=result,
                 command=command,
+                trace_id=claimed.trace_id,
             )
 
             if run.status == RunState.CANCELED.value or result.canceled:
-                self._finalize_canceled_run(db=db, run=run, slot_id=claimed.slot_id, result=result)
+                self._finalize_canceled_run(
+                    db=db,
+                    run=run,
+                    slot_id=claimed.slot_id,
+                    result=result,
+                    trace_id=claimed.trace_id,
+                )
                 db.commit()
                 return
 
             if result.lease_expired:
-                self._finalize_expired_run(db=db, run=run, slot_id=claimed.slot_id, result=result)
+                self._finalize_expired_run(
+                    db=db,
+                    run=run,
+                    slot_id=claimed.slot_id,
+                    result=result,
+                    trace_id=claimed.trace_id,
+                )
                 db.commit()
                 return
 
@@ -296,6 +363,7 @@ class WorkerOrchestrator:
                     slot_id=claimed.slot_id,
                     failure_reason=FailureReasonCode.AGENT_TIMEOUT,
                     result=result,
+                    trace_id=claimed.trace_id,
                 )
                 db.commit()
                 return
@@ -307,6 +375,7 @@ class WorkerOrchestrator:
                     slot_id=claimed.slot_id,
                     failure_reason=FailureReasonCode.UNKNOWN_ERROR,
                     result=result,
+                    trace_id=claimed.trace_id,
                 )
                 db.commit()
                 return
@@ -318,7 +387,11 @@ class WorkerOrchestrator:
                     event_type="status_transition",
                     status_from=status_from,
                     status_to=status_to,
-                    payload={"source": "worker", "check": "codex_cli_execution"},
+                    payload={
+                        "source": "worker",
+                        "check": "codex_cli_execution",
+                        "trace_id": claimed.trace_id,
+                    },
                 )
             )
             # Release the row lock acquired by claim before long-running validation checks.
@@ -330,6 +403,7 @@ class WorkerOrchestrator:
                 claimed=claimed,
                 should_cancel=should_cancel,
                 on_tick=on_tick,
+                trace_id=claimed.trace_id,
             )
             run = db.query(Run).filter(Run.id == claimed.run_id).with_for_update().first()
             if run is None:
@@ -344,6 +418,7 @@ class WorkerOrchestrator:
                         run=run,
                         slot_id=claimed.slot_id,
                         result=failed_result,
+                        trace_id=claimed.trace_id,
                     )
                     db.commit()
                     return
@@ -353,6 +428,7 @@ class WorkerOrchestrator:
                         run=run,
                         slot_id=claimed.slot_id,
                         result=failed_result,
+                        trace_id=claimed.trace_id,
                     )
                     db.commit()
                     return
@@ -364,14 +440,15 @@ class WorkerOrchestrator:
                     failure_reason=failure_reason or FailureReasonCode.CHECKS_FAILED,
                     result=failed_result,
                     extra_payload={"failed_check": validation_result.failed_check_name},
+                    trace_id=claimed.trace_id,
                 )
                 db.commit()
                 return
 
-            self._finalize_success_run(db=db, run=run, result=result)
+            self._finalize_success_run(db=db, run=run, result=result, trace_id=claimed.trace_id)
             db.commit()
 
-    def _mark_editing(self, run_id: str, slot_id: str) -> bool:
+    def _mark_editing(self, run_id: str, slot_id: str, trace_id: str | None) -> bool:
         with SessionLocal() as db:
             run = db.query(Run).filter(Run.id == run_id).with_for_update().first()
             if run is None:
@@ -382,7 +459,7 @@ class WorkerOrchestrator:
                     RunEvent(
                         run_id=run.id,
                         event_type="worker_skipped_canceled_before_execution",
-                        payload={"source": "worker", "slot_id": slot_id},
+                        payload={"source": "worker", "slot_id": slot_id, "trace_id": trace_id},
                     )
                 )
                 release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
@@ -396,17 +473,26 @@ class WorkerOrchestrator:
                     event_type="status_transition",
                     status_from=status_from,
                     status_to=status_to,
-                    payload={"source": "worker", "slot_id": slot_id},
+                    payload={"source": "worker", "slot_id": slot_id, "trace_id": trace_id},
                 )
             )
             db.add(
                 RunEvent(
                     run_id=run.id,
                     event_type="codex_command_started",
-                    payload={"source": "worker", "slot_id": slot_id},
+                    payload={"source": "worker", "slot_id": slot_id, "trace_id": trace_id},
                 )
             )
             db.commit()
+            emit_worker_log(
+                event="run_editing_started",
+                trace_id=trace_id,
+                run_id=run.id,
+                slot_id=slot_id,
+                commit_sha=run.commit_sha,
+                status_from=status_from,
+                status_to=status_to,
+            )
             return True
 
     def _record_output_artifact(
@@ -419,6 +505,7 @@ class WorkerOrchestrator:
         output_path: Path,
         result,
         command: list[str],
+        trace_id: str | None,
     ) -> None:
         artifact_uri = str(output_path)
         db.add(
@@ -431,6 +518,7 @@ class WorkerOrchestrator:
                     "timed_out": result.timed_out,
                     "canceled": result.canceled,
                     "lease_expired": result.lease_expired,
+                    "trace_id": trace_id,
                 },
             )
         )
@@ -448,6 +536,7 @@ class WorkerOrchestrator:
                     "lease_expired": result.lease_expired,
                     "duration_seconds": result.duration_seconds,
                     "output_excerpt": result.output_excerpt,
+                    "trace_id": trace_id,
                 },
             )
         )
@@ -483,6 +572,7 @@ class WorkerOrchestrator:
         claimed: ClaimedRun,
         should_cancel,
         on_tick,
+        trace_id: str | None,
     ) -> ValidationPipelineResult:
         for check in self.required_checks:
             check_started_at = utcnow()
@@ -496,6 +586,7 @@ class WorkerOrchestrator:
                         "source": "worker",
                         "check_name": check.name,
                         "command": check.command,
+                        "trace_id": trace_id,
                     },
                 )
             )
@@ -508,6 +599,13 @@ class WorkerOrchestrator:
                 poll_interval_seconds=self.poll_interval_seconds,
                 should_cancel=should_cancel,
                 on_tick=on_tick,
+                env=self._build_execution_env(
+                    trace_id=trace_id,
+                    run_id=run.id,
+                    slot_id=claimed.slot_id,
+                    commit_sha=run.commit_sha,
+                    check_name=check.name,
+                ),
             )
             check_ended_at = utcnow()
 
@@ -550,6 +648,7 @@ class WorkerOrchestrator:
                         "timed_out": result.timed_out,
                         "canceled": result.canceled,
                         "lease_expired": result.lease_expired,
+                        "trace_id": trace_id,
                     },
                 )
             )
@@ -568,8 +667,22 @@ class WorkerOrchestrator:
                         "lease_expired": result.lease_expired,
                         "duration_seconds": result.duration_seconds,
                         "output_excerpt": result.output_excerpt,
+                        "trace_id": trace_id,
                     },
                 )
+            )
+            emit_worker_log(
+                event="validation_check_finished",
+                trace_id=trace_id,
+                run_id=run.id,
+                slot_id=claimed.slot_id,
+                commit_sha=run.commit_sha,
+                check_name=check.name,
+                status=check_status,
+                exit_code=result.exit_code,
+                timed_out=result.timed_out,
+                canceled=result.canceled,
+                lease_expired=result.lease_expired,
             )
 
             if failure_reason is not None:
@@ -582,7 +695,7 @@ class WorkerOrchestrator:
 
         return ValidationPipelineResult(ok=True)
 
-    def _finalize_success_run(self, *, db, run: Run, result) -> None:
+    def _finalize_success_run(self, *, db, run: Run, result, trace_id: str | None) -> None:
         status_from, status_to = transition_run_status(run, target=RunState.PREVIEW_READY)
         db.add(
             RunEvent(
@@ -595,8 +708,17 @@ class WorkerOrchestrator:
                     "result": "ready_for_preview",
                     "exit_code": result.exit_code,
                     "required_checks": [check.name for check in self.required_checks],
+                    "trace_id": trace_id,
                 },
             )
+        )
+        emit_worker_log(
+            event="run_preview_ready",
+            trace_id=trace_id,
+            run_id=run.id,
+            slot_id=run.slot_id,
+            commit_sha=run.commit_sha,
+            exit_code=result.exit_code,
         )
 
     def _finalize_failed_run(
@@ -608,6 +730,7 @@ class WorkerOrchestrator:
         failure_reason: FailureReasonCode,
         result,
         extra_payload: dict[str, Any] | None = None,
+        trace_id: str | None,
     ) -> None:
         status_from, status_to = transition_run_status(
             run,
@@ -619,6 +742,7 @@ class WorkerOrchestrator:
             "failure_reason_code": failure_reason.value,
             "exit_code": result.exit_code,
             "timed_out": result.timed_out,
+            "trace_id": trace_id,
         }
         if extra_payload:
             payload.update(extra_payload)
@@ -632,8 +756,27 @@ class WorkerOrchestrator:
             )
         )
         release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
+        emit_worker_log(
+            event="run_failed",
+            level=logging.WARNING,
+            trace_id=trace_id,
+            run_id=run.id,
+            slot_id=slot_id,
+            commit_sha=run.commit_sha,
+            failure_reason_code=failure_reason.value,
+            exit_code=result.exit_code,
+            timed_out=result.timed_out,
+        )
 
-    def _finalize_expired_run(self, *, db, run: Run, slot_id: str, result) -> None:
+    def _finalize_expired_run(
+        self,
+        *,
+        db,
+        run: Run,
+        slot_id: str,
+        result,
+        trace_id: str | None,
+    ) -> None:
         status_from, status_to = transition_run_status(run, target=RunState.EXPIRED)
         db.add(
             RunEvent(
@@ -645,12 +788,30 @@ class WorkerOrchestrator:
                     "source": "worker",
                     "reason": FailureReasonCode.PREVIEW_EXPIRED.value,
                     "lease_expired": result.lease_expired,
+                    "trace_id": trace_id,
                 },
             )
         )
         release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
+        emit_worker_log(
+            event="run_expired",
+            level=logging.WARNING,
+            trace_id=trace_id,
+            run_id=run.id,
+            slot_id=slot_id,
+            commit_sha=run.commit_sha,
+            lease_expired=result.lease_expired,
+        )
 
-    def _finalize_canceled_run(self, *, db, run: Run, slot_id: str, result) -> None:
+    def _finalize_canceled_run(
+        self,
+        *,
+        db,
+        run: Run,
+        slot_id: str,
+        result,
+        trace_id: str | None,
+    ) -> None:
         db.add(
             RunEvent(
                 run_id=run.id,
@@ -659,10 +820,45 @@ class WorkerOrchestrator:
                     "source": "worker",
                     "exit_code": result.exit_code,
                     "canceled": True,
+                    "trace_id": trace_id,
                 },
             )
         )
         release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
+        emit_worker_log(
+            event="run_canceled",
+            trace_id=trace_id,
+            run_id=run.id,
+            slot_id=slot_id,
+            commit_sha=run.commit_sha,
+            exit_code=result.exit_code,
+        )
+
+    @staticmethod
+    def _build_execution_env(
+        *,
+        trace_id: str | None,
+        run_id: str,
+        slot_id: str,
+        commit_sha: str | None = None,
+        check_name: str | None = None,
+    ) -> dict[str, str]:
+        env: dict[str, str] = {
+            "RUN_ID": run_id,
+            "SLOT_ID": slot_id,
+            "OUROBOROS_RUN_ID": run_id,
+            "OUROBOROS_SLOT_ID": slot_id,
+        }
+        if trace_id:
+            env["TRACE_ID"] = trace_id
+            env["OUROBOROS_TRACE_ID"] = trace_id
+        if commit_sha:
+            env["COMMIT_SHA"] = commit_sha
+            env["OUROBOROS_COMMIT_SHA"] = commit_sha
+        if check_name:
+            env["CHECK_NAME"] = check_name
+            env["OUROBOROS_CHECK_NAME"] = check_name
+        return env
 
     def _heartbeat_slot(self, run_id: str, slot_id: str) -> str | None:
         with SessionLocal() as db:

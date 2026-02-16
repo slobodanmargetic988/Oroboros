@@ -19,12 +19,52 @@ Host-only rollback only. No Docker/Compose/Kubernetes usage.
 EOF
 }
 
+TRACE_ID="${TRACE_ID:-${OUROBOROS_TRACE_ID:-}}"
+RUN_ID="${RUN_ID:-${OUROBOROS_RUN_ID:-}}"
+SLOT_ID="${SLOT_ID:-${OUROBOROS_SLOT_ID:-}}"
+
+structured_log() {
+  local event="$1"
+  local message="${2:-}"
+  if ! command -v python3 >/dev/null 2>&1; then
+    return
+  fi
+  python3 - "$event" "$message" "${TRACE_ID:-}" "${RUN_ID:-}" "${SLOT_ID:-}" "${TARGET_RELEASE_COMMIT:-${OUROBOROS_COMMIT_SHA:-}}" <<'PY'
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import json
+import sys
+
+event = sys.argv[1]
+message = sys.argv[2]
+trace_id = sys.argv[3] or None
+run_id = sys.argv[4] or None
+slot_id = sys.argv[5] or None
+commit_sha = sys.argv[6] or None
+
+payload = {
+    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+    "component": "rollback",
+    "event": event,
+    "message": message,
+    "trace_id": trace_id,
+    "run_id": run_id,
+    "slot_id": slot_id,
+    "commit_sha": commit_sha,
+}
+print(json.dumps(payload, sort_keys=True))
+PY
+}
+
 log() {
   echo "[rollback] $*"
+  structured_log "rollback_log" "$*"
 }
 
 die() {
   echo "[rollback] ERROR: $*" >&2
+  structured_log "rollback_error" "$*"
   exit 1
 }
 
@@ -145,6 +185,7 @@ if [[ ! -d "${TARGET_RELEASE_DIR}" ]]; then
   registry_upsert "${TARGET_RELEASE_ID}" "${TARGET_RELEASE_ID}" "rollback_target_missing"
   die "Target release directory does not exist: ${TARGET_RELEASE_DIR}"
 fi
+structured_log "rollback_started" "Starting rollback pipeline"
 
 TARGET_RELEASE_COMMIT="$(read_meta_value "${TARGET_RELEASE_DIR}/.deploy-meta" "commit_sha")"
 TARGET_RELEASE_COMMIT="${TARGET_RELEASE_COMMIT:-${TARGET_RELEASE_ID}}"
@@ -193,3 +234,4 @@ fi
 
 log "Rollback succeeded"
 log "Current release: ${TARGET_RELEASE_DIR}"
+structured_log "rollback_succeeded" "Rollback pipeline completed"

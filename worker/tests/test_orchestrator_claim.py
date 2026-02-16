@@ -23,7 +23,7 @@ if str(WORKER_ROOT) not in sys.path:
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
 
 from app.db.base import Base
-from app.models import Run, RunEvent, SlotLease
+from app.models import Run, RunContext, RunEvent, SlotLease
 from worker import orchestrator as worker_orchestrator
 
 
@@ -127,6 +127,82 @@ class ClaimPathLeaseVisibilityRegressionTests(unittest.TestCase):
 
             events = db.query(RunEvent).filter(RunEvent.run_id == self.run_id).all()
             self.assertTrue(any(event.status_to == "planning" for event in events))
+
+    def test_claim_carries_trace_id_from_run_context_metadata(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+
+        with self.session_factory() as db:
+            db.add(
+                RunContext(
+                    run_id=self.run_id,
+                    route="/codex",
+                    metadata_json={"trace_id": "trace-claim-123"},
+                )
+            )
+            db.commit()
+
+        def fake_acquire_slot_lease(*, db, run_id: str):
+            run = db.query(Run).filter(Run.id == run_id).first()
+            self.assertIsNotNone(run)
+            now = _utcnow()
+            db.add(
+                SlotLease(
+                    slot_id="preview-1",
+                    run_id=run_id,
+                    lease_state="leased",
+                    leased_at=now,
+                    expires_at=now + timedelta(minutes=5),
+                    heartbeat_at=now,
+                )
+            )
+            run.slot_id = "preview-1"
+            return {
+                "acquired": True,
+                "slot_id": "preview-1",
+                "queue_reason": None,
+                "expires_at": now + timedelta(minutes=5),
+                "ttl_seconds": 300,
+            }
+
+        def fake_assign_worktree(*, db, run_id: str, slot_id: str):
+            run = db.query(Run).filter(Run.id == run_id).first()
+            self.assertIsNotNone(run)
+            worktree_path = str(Path(temp_dir.name) / slot_id)
+            run.worktree_path = worktree_path
+            run.branch_name = f"codex/run-{run_id}"
+            return {
+                "assigned": True,
+                "reused": False,
+                "slot_id": slot_id,
+                "run_id": run_id,
+                "branch_name": run.branch_name,
+                "worktree_path": worktree_path,
+            }
+
+        with (
+            patch.object(worker_orchestrator, "SessionLocal", self.session_factory),
+            patch.object(worker_orchestrator, "acquire_slot_lease", side_effect=fake_acquire_slot_lease),
+            patch.object(worker_orchestrator, "assign_worktree", side_effect=fake_assign_worktree),
+            patch.object(worker_orchestrator.WorkerOrchestrator, "_execute_claimed_run") as execute_mock,
+        ):
+            orchestrator = worker_orchestrator.WorkerOrchestrator()
+            processed = orchestrator.process_next_run()
+
+        self.assertTrue(processed)
+        self.assertTrue(execute_mock.called)
+        claimed = execute_mock.call_args.args[0]
+        self.assertEqual(claimed.trace_id, "trace-claim-123")
+
+        with self.session_factory() as db:
+            planning_event = (
+                db.query(RunEvent)
+                .filter(RunEvent.run_id == self.run_id, RunEvent.status_to == "planning")
+                .order_by(RunEvent.id.desc())
+                .first()
+            )
+            self.assertIsNotNone(planning_event)
+            self.assertEqual(planning_event.payload.get("trace_id"), "trace-claim-123")
 
 
 class CanceledBeforeExecutionTests(unittest.TestCase):
