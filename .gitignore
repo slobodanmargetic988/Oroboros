@@ -13,6 +13,7 @@ venv/
 # Build artifacts
 dist/
 build/
+*.tsbuildinfo
 *.egg-info/
 
 # Env files
