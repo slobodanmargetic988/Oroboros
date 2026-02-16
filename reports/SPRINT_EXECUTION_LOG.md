@@ -5,7 +5,7 @@ Generated: 2026-02-16 11:32 UTC
 |---|---|---|---|---|---|---|---|---|
 | MYO-14 | Prep | - | Human Review | unlocked-for-human | READY_FOR_REVIEW | codex_review_ready | human reviewer | no-container compliant evidence required |
 | MYO-15 | Prep | MYO-14 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | host-only runtime validated in tester pass |
-| MYO-16 | Prep | MYO-15 | Agent working | blocked | BLOCKED |  | backend-developer (await `Agent work DONE` + handoff metadata) | tester gate check failed (not ready) |
+| MYO-16 | Prep | MYO-15 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | migration-integrity tester pass on branch `codex/myo-16-control-plane-schema` |
 | MYO-17 | Prep | MYO-16 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-18 | A1 | MYO-17 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-21 | A1 | MYO-18 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
