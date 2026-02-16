@@ -1,0 +1,16 @@
+[Unit]
+Description=Ouroboros Caddy reverse proxy
+After=network.target ouroboros-api.service ouroboros-worker.service ouroboros-web@main.service ouroboros-web@preview1.service ouroboros-web@preview2.service ouroboros-web@preview3.service
+Wants=ouroboros-api.service ouroboros-worker.service ouroboros-web@main.service ouroboros-web@preview1.service ouroboros-web@preview2.service ouroboros-web@preview3.service
+
+[Service]
+Type=simple
+User=caddy
+Group=caddy
+ExecStart=/usr/bin/caddy run --config /srv/oroboros/infra/caddy/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --config /srv/oroboros/infra/caddy/Caddyfile --adapter caddyfile
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

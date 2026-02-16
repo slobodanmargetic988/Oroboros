@@ -1,0 +1,17 @@
+[Unit]
+Description=Ouroboros FastAPI service
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=oroboros
+Group=oroboros
+WorkingDirectory=/srv/oroboros/backend
+EnvironmentFile=/etc/oroboros/api.env
+ExecStart=/srv/oroboros/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 # Base Linux Runtime Topology (MYO-15)
 
-This document defines the initial process topology for:
+This document defines the host-native process topology for:
 - `web-main` (production web surface)
 - `web-preview-1`
 - `web-preview-2`
@@ -12,52 +12,55 @@ This document defines the initial process topology for:
 - `reverse-proxy`
 
 ## Process Manager
-- Baseline process manager: **Docker Compose**
-- Compose file: `infra/docker-compose.runtime.yml`
+- Baseline process manager: **systemd**
+- Unit files: `infra/systemd/*.service`
+- Env files: `infra/systemd/env/*.env` (installed to `/etc/oroboros/`)
 
 ## Service Topology
 
-| Service | Container Name | Internal Port | Host Port | Hostname / Route |
-|---|---|---:|---:|---|
-| reverse-proxy | ouroboros-reverse-proxy | 80 | 8088 | Host-based routes via Caddy |
-| web-main | ouroboros-web-main | 8080 | n/a | `app.example.com` |
-| web-preview-1 | ouroboros-web-preview-1 | 8080 | n/a | `preview1.example.com` |
-| web-preview-2 | ouroboros-web-preview-2 | 8080 | n/a | `preview2.example.com` |
-| web-preview-3 | ouroboros-web-preview-3 | 8080 | n/a | `preview3.example.com` |
-| api | ouroboros-api | 8000 | 8000 | `api.example.com` (via proxy) |
-| worker | ouroboros-worker | 8090 | 8090 | `worker.example.com` (via proxy) |
-| postgres | ouroboros-postgres | 5432 | 5432 | internal DB endpoint |
-| redis | ouroboros-redis | 6379 | 6379 | internal queue endpoint |
+| Service | systemd Unit | Bind Address | Port | Hostname / Route |
+|---|---|---|---:|---|
+| reverse-proxy (Caddy) | `ouroboros-caddy.service` | `127.0.0.1` | 8088 | Host-based routes via Caddy |
+| web-main | `ouroboros-web@main.service` | `127.0.0.1` | 3100 | `app.example.com` |
+| web-preview-1 | `ouroboros-web@preview1.service` | `127.0.0.1` | 3101 | `preview1.example.com` |
+| web-preview-2 | `ouroboros-web@preview2.service` | `127.0.0.1` | 3102 | `preview2.example.com` |
+| web-preview-3 | `ouroboros-web@preview3.service` | `127.0.0.1` | 3103 | `preview3.example.com` |
+| api | `ouroboros-api.service` | `127.0.0.1` | 8000 | `api.example.com` (via proxy) |
+| worker | `ouroboros-worker.service` | `127.0.0.1` | 8090 | `worker.example.com` (via proxy) |
+| postgres | distro package service (`postgresql.service`) | `127.0.0.1` | 5432 | internal DB endpoint |
+| redis | distro package service (`redis.service`) | `127.0.0.1` | 6379 | internal queue endpoint |
 
 ## Reverse Proxy Routes
 Defined in `infra/caddy/Caddyfile`:
-- `app.example.com` -> `web-main:8080`
-- `preview1.example.com` -> `web-preview-1:8080`
-- `preview2.example.com` -> `web-preview-2:8080`
-- `preview3.example.com` -> `web-preview-3:8080`
-- `api.example.com` -> `api:8000`
-- `worker.example.com` -> `worker:8090`
+- `app.example.com` -> `127.0.0.1:3100`
+- `preview1.example.com` -> `127.0.0.1:3101`
+- `preview2.example.com` -> `127.0.0.1:3102`
+- `preview3.example.com` -> `127.0.0.1:3103`
+- `api.example.com` -> `127.0.0.1:8000`
+- `worker.example.com` -> `127.0.0.1:8090`
 
 ## Core Environment Values
-- API:
-  - `DATABASE_URL=postgresql+psycopg://postgres:postgres@postgres:5432/builder_control`
-- Worker:
-  - `REDIS_URL=redis://redis:6379/0`
+- API (`/etc/oroboros/api.env`):
+  - `DATABASE_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5432/builder_control`
+- Worker (`/etc/oroboros/worker.env`):
+  - `REDIS_URL=redis://127.0.0.1:6379/0`
   - `WORKER_POLL_INTERVAL_SECONDS=5`
   - `WORKER_HEALTH_PORT=8090`
-- Postgres:
-  - `POSTGRES_DB=builder_control`
-  - `POSTGRES_USER=postgres`
-  - `POSTGRES_PASSWORD=postgres`
+- Web surfaces (`/etc/oroboros/web-*.env`):
+  - `WEB_ROOT=<static_root>`
+  - `WEB_PORT=<3100..3103>`
 
 ## Health Endpoints
-- `web-main`: `/health`
-- `web-preview-1`: `/health`
-- `web-preview-2`: `/health`
-- `web-preview-3`: `/health`
+- `web-main`: `/health` on port `3100`
+- `web-preview-1`: `/health` on port `3101`
+- `web-preview-2`: `/health` on port `3102`
+- `web-preview-3`: `/health` on port `3103`
 - `api`: `http://127.0.0.1:8000/health`
 - `worker`: `http://127.0.0.1:8090/health`
-- `postgres`: `pg_isready -U postgres -d builder_control`
-- `redis`: `redis-cli ping`
+- `postgres`: `pg_isready -h 127.0.0.1 -U postgres -d builder_control`
+- `redis`: `redis-cli -h 127.0.0.1 ping`
 
 Use `scripts/runtime-health-check.sh` for one-command verification.
+
+## Non-container Constraint
+This topology intentionally avoids Docker/Compose/Kubernetes and runs services directly as host processes under `systemd`.

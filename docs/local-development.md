@@ -3,15 +3,39 @@
 ## Prerequisites
 - Node.js 20+
 - Python 3.11+
-- Docker + Docker Compose plugin
+- Caddy installed on host
+- PostgreSQL installed on host
+- Redis installed on host
+- systemd-enabled Linux host
 
 ## 1) Shared Environment
 ```bash
 cp .env.example .env
 ```
 
-## 2) Runtime Topology (recommended for MYO-15)
+## 2) Prepare Python virtualenvs
+
+### Backend venv
 ```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+deactivate
+```
+
+### Worker venv
+```bash
+cd worker
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+deactivate
+```
+
+## 3) Install and start runtime services (systemd)
+```bash
+./scripts/systemd-install-runtime.sh
 ./scripts/runtime-up.sh
 ./scripts/runtime-health-check.sh
 ```
@@ -21,37 +45,31 @@ Stop runtime stack:
 ./scripts/runtime-down.sh
 ```
 
-## 3) Service-by-service mode (optional)
+## 4) Optional service-by-service mode
 
 ### Backend
 ```bash
 cd backend
-python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ### Worker
 ```bash
 cd worker
-python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
 python -m worker.main
 ```
 
-### Frontend
+### Web surface (example)
 ```bash
-cd frontend
-npm install
-npm run dev
+python3 scripts/run-web-surface.py --root infra/web-main --port 3100
 ```
 
 ## Health checks
 - API: `http://127.0.0.1:8000/health`
 - Worker: `http://127.0.0.1:8090/health`
-- Reverse proxy health through host routing:
+- Reverse proxy host-routing checks:
   - `curl -H 'Host: app.example.com' http://127.0.0.1:8088/health`
   - `curl -H 'Host: preview1.example.com' http://127.0.0.1:8088/health`
   - `curl -H 'Host: preview2.example.com' http://127.0.0.1:8088/health`
