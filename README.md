@@ -1,0 +1,29 @@
+# Ouroboros Monorepo Skeleton
+
+This repository contains the initial runtime boundaries for the Codex Builder Core MVP.
+
+## Layout
+- `frontend/`: Vue 3 + Vite + TypeScript UI scaffold.
+- `backend/`: FastAPI service scaffold with SQLAlchemy session setup + Alembic migrations.
+- `worker/`: Runnable Python worker scaffold for background job processing.
+- `infra/`: Host-native runtime topology (`systemd` units + reverse proxy + web placeholders).
+- `scripts/`: Local developer helper scripts.
+- `docs/`: Technical notes and local operation guides.
+
+## Quick Start
+1. Copy shared environment files:
+   - `cp .env.example .env`
+   - `cp backend/.env.example backend/.env`
+   - `cp worker/.env.example worker/.env`
+2. Bootstrap DB schema and local seed data:
+   - `./scripts/db-bootstrap.sh`
+3. Install runtime unit files and env templates:
+   - `./scripts/systemd-install-runtime.sh`
+4. Start base runtime topology:
+   - `./scripts/runtime-up.sh`
+5. Verify core service health checks:
+   - `./scripts/runtime-health-check.sh`
+6. Read topology and operation guides:
+   - `docs/runtime-topology.md`
+   - `docs/db-bootstrap-and-migrations.md`
+   - `docs/local-development.md`

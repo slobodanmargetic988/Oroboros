@@ -1,0 +1,39 @@
+{
+    auto_https off
+}
+
+:8088 {
+    @app host app.example.com
+    handle @app {
+        reverse_proxy 127.0.0.1:3100
+    }
+
+    @preview1 host preview1.example.com
+    handle @preview1 {
+        reverse_proxy 127.0.0.1:3101
+    }
+
+    @preview2 host preview2.example.com
+    handle @preview2 {
+        reverse_proxy 127.0.0.1:3102
+    }
+
+    @preview3 host preview3.example.com
+    handle @preview3 {
+        reverse_proxy 127.0.0.1:3103
+    }
+
+    @api host api.example.com
+    handle @api {
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    @worker host worker.example.com
+    handle @worker {
+        reverse_proxy 127.0.0.1:8090
+    }
+
+    handle {
+        respond "unknown host" 404
+    }
+}

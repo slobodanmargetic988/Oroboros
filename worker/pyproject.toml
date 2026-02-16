@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ouroboros-worker"
+version = "0.1.0"
+description = "Worker scaffold for Ouroboros"
+requires-python = ">=3.11"
+dependencies = [
+  "redis>=5.2.1",
+  "rq>=1.16.2",
+  "pydantic-settings>=2.6.1"
+]
+
+[tool.setuptools]
+packages = ["worker"]

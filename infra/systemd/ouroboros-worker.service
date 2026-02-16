@@ -1,0 +1,17 @@
+[Unit]
+Description=Ouroboros worker service
+After=network.target redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=oroboros
+Group=oroboros
+WorkingDirectory=/srv/oroboros/worker
+EnvironmentFile=/etc/oroboros/worker.env
+ExecStart=/srv/oroboros/worker/.venv/bin/python -m worker.main
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
