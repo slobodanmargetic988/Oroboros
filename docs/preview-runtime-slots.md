@@ -11,9 +11,9 @@ This document defines fixed preview slot provisioning for host-level deployment.
 
 | Slot ID | URL | systemd unit | Local port | Static root |
 |---|---|---|---:|---|
-| preview1 | `preview1.example.com` | `ouroboros-web@preview1` | 3101 | `/srv/oroboros/infra/web-preview-1` |
-| preview2 | `preview2.example.com` | `ouroboros-web@preview2` | 3102 | `/srv/oroboros/infra/web-preview-2` |
-| preview3 | `preview3.example.com` | `ouroboros-web@preview3` | 3103 | `/srv/oroboros/infra/web-preview-3` |
+| preview1 | `preview1.example.com` | `ouroboros-web@preview1` | 3101 | `/srv/oroboros/current/infra/web-preview-1` |
+| preview2 | `preview2.example.com` | `ouroboros-web@preview2` | 3102 | `/srv/oroboros/current/infra/web-preview-2` |
+| preview3 | `preview3.example.com` | `ouroboros-web@preview3` | 3103 | `/srv/oroboros/current/infra/web-preview-3` |
 
 Routing is handled by Caddy in `infra/caddy/Caddyfile`:
 - `preview1.example.com -> 127.0.0.1:3101`

@@ -5,11 +5,19 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models import PreviewDbReset, Run, RunEvent, SlotLease
 from app.models.common import utcnow
 from app.services.preview_db_reset import db_name_for_slot, normalize_slot, reset_and_seed_slot
 
-SLOT_ORDER = ["preview1", "preview2", "preview3"]
+
+def _configured_slot_ids() -> list[str]:
+    settings = get_settings()
+    raw = getattr(settings, "slot_ids_csv", "preview-1,preview-2,preview-3")
+    slot_ids = [part.strip() for part in raw.split(",") if part.strip()]
+    if not slot_ids:
+        return ["preview-1", "preview-2", "preview-3"]
+    return slot_ids
 
 
 class SlotUnavailableError(RuntimeError):
@@ -36,7 +44,7 @@ def _as_utc(timestamp: datetime) -> datetime:
 def _active_slots(db: Session, now: datetime) -> set[str]:
     leases = (
         db.query(SlotLease)
-        .filter(SlotLease.lease_state == "active")
+        .filter(SlotLease.lease_state.in_(["leased", "active"]))
         .all()
     )
     active: set[str] = set()
@@ -44,6 +52,8 @@ def _active_slots(db: Session, now: datetime) -> set[str]:
         expires_at = _as_utc(lease.expires_at)
         if expires_at > now:
             active.add(normalize_slot(lease.slot_id))
+            if lease.lease_state == "active":
+                lease.lease_state = "leased"
         else:
             lease.lease_state = "expired"
     return active
@@ -65,8 +75,9 @@ def allocate_slot_for_run(
 
     now = datetime.now(timezone.utc)
     active = _active_slots(db, now)
+    slot_order = _configured_slot_ids()
 
-    available_slot = next((slot for slot in SLOT_ORDER if slot not in active), None)
+    available_slot = next((slot for slot in slot_order if normalize_slot(slot) not in active), None)
     if available_slot is None:
         raise SlotUnavailableError("No preview slot available")
 
@@ -111,10 +122,16 @@ def allocate_slot_for_run(
 
     lease = db.query(SlotLease).filter(SlotLease.slot_id == available_slot).first()
     if lease is None:
+        legacy_slot_id = normalize_slot(available_slot)
+        if legacy_slot_id != available_slot:
+            lease = db.query(SlotLease).filter(SlotLease.slot_id == legacy_slot_id).first()
+            if lease is not None:
+                lease.slot_id = available_slot
+    if lease is None:
         lease = SlotLease(
             slot_id=available_slot,
             run_id=run.id,
-            lease_state="active",
+            lease_state="leased",
             leased_at=now,
             expires_at=now + timedelta(minutes=lease_ttl_minutes),
             heartbeat_at=now,
@@ -122,7 +139,7 @@ def allocate_slot_for_run(
         db.add(lease)
     else:
         lease.run_id = run.id
-        lease.lease_state = "active"
+        lease.lease_state = "leased"
         lease.leased_at = now
         lease.expires_at = now + timedelta(minutes=lease_ttl_minutes)
         lease.heartbeat_at = now
