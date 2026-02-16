@@ -65,7 +65,10 @@
         <li v-for="run in runs" :key="run.id" class="run-item">
           <div class="run-top">
             <strong>{{ run.title }}</strong>
-            <span :class="statusChipClass(run.status)">{{ run.status }}</span>
+            <div class="run-actions">
+              <RouterLink class="details-link" :to="`/codex/runs/${run.id}`">View details</RouterLink>
+              <span :class="statusChipClass(run.status)">{{ run.status }}</span>
+            </div>
           </div>
           <p class="run-prompt">{{ run.prompt }}</p>
           <div class="run-meta">
@@ -387,6 +390,18 @@ button:disabled {
   justify-content: space-between;
   align-items: center;
   gap: 0.6rem;
+}
+
+.run-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.details-link {
+  color: #0f766e;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .run-prompt {

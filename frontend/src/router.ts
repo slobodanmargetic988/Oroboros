@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 
 import CodexPage from "./pages/CodexPage.vue";
+import RunDetailsPage from "./pages/RunDetailsPage.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -12,6 +13,10 @@ const router = createRouter({
     {
       path: "/codex",
       component: CodexPage,
+    },
+    {
+      path: "/codex/runs/:runId",
+      component: RunDetailsPage,
     },
   ],
 });
