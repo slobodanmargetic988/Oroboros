@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_DIR="${ROOT_DIR}/backend"
+CALLER_CWD="${PWD}"
 PYTHON_CMD=""
 
 if [[ -x "${BACKEND_DIR}/.venv/bin/python" ]]; then
@@ -18,4 +19,4 @@ else
 fi
 
 cd "${BACKEND_DIR}"
-exec "${PYTHON_CMD}" -m app.services.preview_smoke_harness_cli "$@"
+exec PREVIEW_SMOKE_CALLER_CWD="${CALLER_CWD}" "${PYTHON_CMD}" -m app.services.preview_smoke_harness_cli "$@"

@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
+from uuid import uuid4
 
 from app.db.session import SessionLocal
 from app.services.preview_smoke_harness import (
@@ -15,8 +17,17 @@ from app.services.preview_smoke_harness import (
 
 
 def _default_output_path() -> Path:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return Path(f"/tmp/preview-smoke-e2e-{timestamp}.json")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    return Path(f"/tmp/preview-smoke-e2e-{timestamp}-{uuid4().hex[:8]}.json")
+
+
+def _resolve_output_path(raw_output: str) -> Path:
+    output = Path(raw_output).expanduser()
+    if output.is_absolute():
+        return output.resolve()
+    caller_cwd = os.getenv("PREVIEW_SMOKE_CALLER_CWD")
+    base = Path(caller_cwd).expanduser() if caller_cwd else Path.cwd()
+    return (base / output).resolve()
 
 
 def main() -> int:
@@ -53,7 +64,7 @@ def main() -> int:
         proxy_origin=args.proxy_origin,
     )
 
-    output_path = write_smoke_report(report, Path(args.output).expanduser().resolve())
+    output_path = write_smoke_report(report, _resolve_output_path(args.output))
     artifact_uri = output_path.as_uri()
 
     if args.persist_validation:
