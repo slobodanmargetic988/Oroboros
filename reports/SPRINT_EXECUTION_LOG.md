@@ -9,7 +9,7 @@ Generated: 2026-02-16 11:32 UTC
 | MYO-17 | Prep | MYO-16 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | run-state-machine contract tester pass on branch `codex/myo-17-state-machine-contract` |
 | MYO-18 | A1 | MYO-17 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | runs API/persistence tester pass on branch `codex/myo-18-runs-api` |
 | MYO-21 | A1 | MYO-18 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | slot lease manager tester pass on branch `codex/myo-21-slot-lease-manager` |
-| MYO-24 | A1 | MYO-21 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
+| MYO-24 | A1 | MYO-21 | Agent work DONE | prepared | IN_PROGRESS | codex_dev_done | backend-tester | git/worktree manager implemented on branch `codex/myo-24-worktree-manager`; ready for tester |
 | MYO-27 | A1 | MYO-24 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-30 | A1 | MYO-27 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-33 | A1 | MYO-30 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
