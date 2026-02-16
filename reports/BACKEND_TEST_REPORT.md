@@ -1,10 +1,10 @@
 # BACKEND_TEST_REPORT
-Generated: 2026-02-16 12:02 UTC
+Generated: 2026-02-16 12:14 UTC
 Tester Agent: backend-tester
-Task: MYO-18
+Task: MYO-19
 Project: Ouroboros (team Myownmint)
-Branch: codex/myo-18-runs-api
-Commit: d463ab8
+Branch: codex/myo-19-codex-page-runs-inbox
+Commit: 2979b35
 Harness Mode: developer_handoff
 Extra Focus: api-contract,persistence
 
@@ -14,30 +14,34 @@ Extra Focus: api-contract,persistence
 - Linear transition applied: `Agent work DONE` -> `Agent testing` -> `Agent test DONE`
 
 ## Scope Under Test
-- `backend/app/api/runs.py`
-- Run/context persistence (route, note, metadata)
-- Pagination and status filter behavior
+- `/codex` route
+- Prompt submission backend wiring (`POST /api/runs`)
+- Runs inbox list wiring (`GET /api/runs`)
+- Persistent context payload behavior
+- Pagination and status filters
 
 ## Evidence
-1. Endpoints validated:
-   - `POST /api/runs`
-   - `GET /api/runs`
-   - `GET /api/runs/{run_id}`
-2. Persistence validated:
-   - Create response includes persisted context values.
-   - DB row exists in `run_context` with expected route/note/metadata.
-3. Pagination validated:
-   - `limit=1,offset=0` and `limit=1,offset=1` both return expected page size and metadata (`total`, `limit`, `offset`).
-4. Status filters validated:
-   - `status=queued` -> total 1
-   - `status=planning` -> total 2
-   - `status=queued&status=planning` -> total 3
-5. Detail behavior validated:
-   - Existing run returns persisted context.
-   - Missing run ID returns 404.
+1. Route + wiring
+   - `/codex` route exists and `/` redirects to `/codex`.
+   - Submit handler posts prompt/context payload to backend runs API.
+2. Runs list behavior
+   - Fetch uses `limit/offset` + status filter.
+   - Live refresh polling configured at 5 seconds.
+   - Status chips rendered via status classifier.
+3. Persistence + API behavior (SQLite-backed test run)
+   - Context fields (`route`, `note`, `metadata`) persisted and returned in create/detail/list responses.
+   - DB row confirmed in `run_context` for created run.
+4. Pagination/filter checks
+   - Page checks with `limit=1` + offsets returned expected envelope.
+   - Status filters returned expected totals (`queued=1`, `planning=2`, multi=3).
+5. Frontend quality checks
+   - `npm run typecheck`: pass
+   - `npm run test`: pass (4 tests)
+   - `npm run build`: pass
+   - `npm run lint`: warnings only, no errors
 
 ## Defects
-- None found in this tester pass.
+- None blocking.
 
 ## Recommendation
 - Handoff: reviewer (`Agent review`)

@@ -15,7 +15,7 @@ Generated: 2026-02-16 11:32 UTC
 | MYO-33 | A1 | MYO-30 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-36 | A1 | MYO-33 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-39 | A1 | MYO-36 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
-| MYO-19 | A2 | MYO-17 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
+| MYO-19 | A2 | MYO-17 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | /codex UI + runs inbox tester pass on branch `codex/myo-19-codex-page-runs-inbox` |
 | MYO-22 | A2 | MYO-19 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
 | MYO-25 | A2 | MYO-22 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
 | MYO-29 | A2 | MYO-25 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
