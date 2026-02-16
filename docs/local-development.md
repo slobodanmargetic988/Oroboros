@@ -40,6 +40,16 @@ Preview slot-only health checks:
 ./scripts/preview-slots-health-check.sh
 ```
 
+Allocate one preview slot for a run (includes DB reset + seed flow):
+```bash
+./scripts/preview-slot-allocate.sh --run-id <run_id> --seed-version v1 --strategy seed
+```
+
+Dry-run DB reset/seed command for a slot:
+```bash
+./scripts/preview-db-reset-and-seed.sh --slot preview1 --run-id dry-run --strategy seed --seed-version v1 --dry-run
+```
+
 ## 4) Optional service-by-service mode
 
 ### Backend
