@@ -15,6 +15,12 @@ from app.domain.run_state_machine import FailureReasonCode
 from app.models import Release, Run, RunArtifact, RunEvent, ValidationCheck
 
 
+class MergeGateConfigurationError(ValueError):
+    def __init__(self, check_name: str) -> None:
+        self.check_name = check_name
+        super().__init__(f"missing_command_for_required_check:{check_name}")
+
+
 @dataclass(frozen=True)
 class MergeGateCheck:
     name: str
@@ -65,7 +71,7 @@ def _resolve_check_command(check_name: str) -> list[str]:
         if parsed:
             return parsed
 
-    return ["python3", "-c", "print('merge-gate-noop')"]
+    raise MergeGateConfigurationError(check_name)
 
 
 def load_merge_gate_checks() -> list[MergeGateCheck]:
@@ -140,7 +146,15 @@ def run_merge_gate_checks(db: Session, run: Run) -> MergeGateResult:
             detail="head_sha_mismatch_before_checks",
         )
 
-    checks = load_merge_gate_checks()
+    try:
+        checks = load_merge_gate_checks()
+    except MergeGateConfigurationError as exc:
+        return MergeGateResult(
+            passed=False,
+            failure_reason=FailureReasonCode.CHECKS_FAILED,
+            failed_check=exc.check_name,
+            detail="missing_check_command_configuration",
+        )
     artifact_dir = _artifact_root() / run.id / "merge-gate"
     artifact_dir.mkdir(parents=True, exist_ok=True)
 

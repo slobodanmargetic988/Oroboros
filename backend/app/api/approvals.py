@@ -15,6 +15,7 @@ from app.domain.run_state_machine import (
 )
 from app.models import Approval, Run, RunEvent
 from app.services.merge_gate import merge_run_commit_to_main, run_merge_gate_checks
+from app.services.slot_lease_manager import release_slot_lease
 
 router = APIRouter(prefix="/api", tags=["approvals"])
 
@@ -230,6 +231,21 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
         status_to=merged_to,
         payload={"source": "merge_gate", "phase": "merge_complete", "merged_commit_sha": run.commit_sha},
     )
+    if run.slot_id:
+        release_slot_id = run.slot_id
+        release_result = release_slot_lease(db=db, slot_id=release_slot_id, run_id=run.id)
+        if not release_result.get("released", False):
+            db.add(
+                RunEvent(
+                    run_id=run.id,
+                    event_type="slot_release_skipped",
+                    payload={
+                        "source": "merge_gate",
+                        "slot_id": release_slot_id,
+                        "reason": release_result.get("reason"),
+                    },
+                )
+            )
 
     db.commit()
     db.refresh(approval)
