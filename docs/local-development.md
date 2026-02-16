@@ -38,6 +38,11 @@ Details: `docs/db-bootstrap-and-migrations.md`
 ./scripts/runtime-health-check.sh
 ```
 
+Check maintenance timers:
+```bash
+systemctl list-timers --all 'ouroboros-maintenance-*'
+```
+
 Stop runtime stack:
 ```bash
 ./scripts/runtime-down.sh
@@ -51,6 +56,13 @@ Preview slot-only health checks:
 Query release registry records:
 ```bash
 ./scripts/release-registry.sh list --limit 20
+```
+
+Run maintenance jobs manually:
+```bash
+./scripts/maintenance-stale-lease-cleanup.sh
+./scripts/maintenance-preview-reset-integrity.sh --lookback-hours 24
+./scripts/maintenance-daily-health-summary.sh --output-dir /srv/oroboros/artifacts/maintenance
 ```
 
 Run preview smoke/E2E harness against host-routed preview slots:

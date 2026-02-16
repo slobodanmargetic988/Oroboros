@@ -1,0 +1,26 @@
+[Unit]
+Description=Ouroboros maintenance: daily deployment and service health summary
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=oneshot
+User=oroboros-worker
+Group=oroboros-worker
+WorkingDirectory=/srv/oroboros/current
+Environment=DEPLOY_ROOT=/srv/oroboros
+Environment=MAINTENANCE_SUMMARY_DIR=/srv/oroboros/artifacts/maintenance
+EnvironmentFile=/etc/oroboros/api.env
+ExecStart=/srv/oroboros/current/scripts/maintenance-daily-health-summary.sh --output-dir /srv/oroboros/artifacts/maintenance --release-limit 20 --lookback-hours 24 --running-grace-minutes 90
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/srv/oroboros/artifacts /tmp
+UMask=0077

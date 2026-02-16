@@ -1,0 +1,12 @@
+[Unit]
+Description=Generate daily deployment and service health summary
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=900
+AccuracySec=5min
+Unit=ouroboros-maintenance-daily-health-summary.service
+
+[Install]
+WantedBy=timers.target

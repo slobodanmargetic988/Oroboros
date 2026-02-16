@@ -1,0 +1,12 @@
+[Unit]
+Description=Run stale slot lease cleanup every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+RandomizedDelaySec=120
+AccuracySec=1min
+Unit=ouroboros-maintenance-stale-leases.service
+
+[Install]
+WantedBy=timers.target

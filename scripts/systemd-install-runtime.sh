@@ -13,6 +13,7 @@ fi
 
 sudo mkdir -p /srv/oroboros/worktrees
 sudo mkdir -p /srv/oroboros/artifacts/runs
+sudo mkdir -p /srv/oroboros/artifacts/maintenance
 sudo chown -R oroboros-worker:oroboros-worker /srv/oroboros/worktrees /srv/oroboros/artifacts
 sudo chmod 750 /srv/oroboros/worktrees
 sudo chmod 750 /srv/oroboros/artifacts
@@ -22,6 +23,12 @@ sudo cp "${ROOT_DIR}/infra/systemd/ouroboros-api.service" /etc/systemd/system/
 sudo cp "${ROOT_DIR}/infra/systemd/ouroboros-worker.service" /etc/systemd/system/
 sudo cp "${ROOT_DIR}/infra/systemd/ouroboros-web@.service" /etc/systemd/system/
 sudo cp "${ROOT_DIR}/infra/systemd/ouroboros-caddy.service" /etc/systemd/system/
+sudo cp "${ROOT_DIR}/infra/systemd/ouroboros-maintenance-stale-leases.service" /etc/systemd/system/
+sudo cp "${ROOT_DIR}/infra/systemd/ouroboros-maintenance-stale-leases.timer" /etc/systemd/system/
+sudo cp "${ROOT_DIR}/infra/systemd/ouroboros-maintenance-preview-reset-audit.service" /etc/systemd/system/
+sudo cp "${ROOT_DIR}/infra/systemd/ouroboros-maintenance-preview-reset-audit.timer" /etc/systemd/system/
+sudo cp "${ROOT_DIR}/infra/systemd/ouroboros-maintenance-daily-health-summary.service" /etc/systemd/system/
+sudo cp "${ROOT_DIR}/infra/systemd/ouroboros-maintenance-daily-health-summary.timer" /etc/systemd/system/
 
 sudo cp "${ROOT_DIR}/infra/systemd/env/api.env" /etc/oroboros/
 sudo cp "${ROOT_DIR}/infra/systemd/env/worker.env" /etc/oroboros/
