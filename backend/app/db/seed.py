@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from app.db.session import SessionLocal
-from app.models import AuditLog, Run, RunContext, RunEvent, User
+from app.models import Run, RunContext, User
+from app.services.run_event_log import append_audit_log, append_run_event
 
 
 def seed_local_data() -> None:
@@ -37,23 +38,16 @@ def seed_local_data() -> None:
             )
         )
 
-        db.add(
-            RunEvent(
-                run_id=run.id,
-                event_type="queued",
-                status_to="queued",
-                payload={"source": "seed"},
-            )
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="queued",
+            status_to="queued",
+            payload={"source": "seed"},
+            actor_id=user.id,
         )
 
-        db.add(
-            AuditLog(
-                actor_id=user.id,
-                action="seed.local_data",
-                payload_hash="seed-local-data-v1",
-                payload_json={"run_id": run.id},
-            )
-        )
+        append_audit_log(db, actor_id=user.id, action="seed.local_data", payload={"run_id": run.id})
 
         db.commit()
     except Exception:

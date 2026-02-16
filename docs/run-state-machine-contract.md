@@ -73,7 +73,25 @@ Runs API behavior for MYO-18:
 
 ### Events
 - `GET /api/runs/{run_id}/events`
-- `GET /api/runs/{run_id}/events/stream` (stub placeholder)
+- `GET /api/runs/{run_id}/events/stream` (SSE live stream)
+- `GET /api/events/schema` (versioned event schema contract)
+
+Event schema contract (MYO-36):
+- Current `schema_version`: `1`.
+- Each timeline event includes:
+  - `schema_version`
+  - `id`
+  - `run_id`
+  - `event_type`
+  - `status_from`
+  - `status_to`
+  - `payload`
+  - `created_at`
+- Stream protocol:
+  - Media type: `text/event-stream`
+  - Event name: `run_event`
+  - Cursor query param: `since_id`
+  - Optional one-shot snapshot mode: `follow=false`
 
 ### Checks
 - `GET /api/runs/{run_id}/checks`

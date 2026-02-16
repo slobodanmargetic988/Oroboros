@@ -23,7 +23,7 @@ if str(WORKER_ROOT) not in sys.path:
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
 
 from app.db.base import Base
-from app.models import Run, RunArtifact, RunEvent, SlotLease, ValidationCheck
+from app.models import AuditLog, Run, RunArtifact, RunEvent, SlotLease, ValidationCheck
 from worker import orchestrator as worker_orchestrator
 from worker.codex_runner import CommandExecutionResult
 
@@ -160,6 +160,13 @@ class ValidationPipelineTests(unittest.TestCase):
             )
             self.assertTrue(any(item.artifact_type == "codex_stdout" for item in artifacts))
             self.assertTrue(any(item.artifact_type == "validation_check_log" for item in artifacts))
+
+            audit_actions = [item.action for item in db.query(AuditLog).order_by(AuditLog.id.asc()).all()]
+            self.assertIn("run.edit.started", audit_actions)
+            self.assertIn("run.edit.completed", audit_actions)
+            self.assertIn("run.test.started", audit_actions)
+            self.assertIn("run.test.check_completed", audit_actions)
+            self.assertIn("run.test.completed", audit_actions)
 
     def test_failed_required_check_marks_run_failed_and_stops_pipeline(self) -> None:
         with tempfile.TemporaryDirectory() as artifact_root, patch.dict(

@@ -17,7 +17,8 @@ from app.domain.run_state_machine import (
     list_failure_reason_codes,
     list_run_states,
 )
-from app.models import Run, RunContext, RunEvent
+from app.models import Run, RunContext
+from app.services.run_event_log import append_run_event
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -147,20 +148,21 @@ def create_run(payload: CreateRunRequest, db: Session = Depends(get_db_session))
     )
     db.add(run_context)
 
-    db.add(
-        RunEvent(
-            run_id=run.id,
-            event_type="run_created",
-            status_to=RunState.QUEUED.value,
-            payload={
-                "source": "api",
-                "context": {
-                    "route": payload.route,
-                    "note": payload.note,
-                    "metadata": payload.metadata,
-                },
+    append_run_event(
+        db,
+        run_id=run.id,
+        event_type="run_created",
+        status_to=RunState.QUEUED.value,
+        payload={
+            "source": "api",
+            "context": {
+                "route": payload.route,
+                "note": payload.note,
+                "metadata": payload.metadata,
             },
-        )
+        },
+        actor_id=payload.created_by,
+        audit_action="run.prompt.submitted",
     )
 
     db.commit()
@@ -240,14 +242,13 @@ def transition_run(
     if payload.failure_reason_code is not None:
         event_payload["failure_reason_code"] = payload.failure_reason_code.value
 
-    db.add(
-        RunEvent(
-            run_id=run.id,
-            event_type="status_transition",
-            status_from=current_state.value,
-            status_to=target_state.value,
-            payload=event_payload or None,
-        )
+    append_run_event(
+        db,
+        run_id=run.id,
+        event_type="status_transition",
+        status_from=current_state.value,
+        status_to=target_state.value,
+        payload=event_payload or None,
     )
 
     db.commit()
@@ -288,13 +289,14 @@ def retry_run(run_id: str, db: Session = Depends(get_db_session)) -> RunResponse
     )
     db.add(child_context)
 
-    db.add(
-        RunEvent(
-            run_id=child_run.id,
-            event_type="run_retried",
-            status_to=RunState.QUEUED.value,
-            payload={"parent_run_id": parent_run.id},
-        )
+    append_run_event(
+        db,
+        run_id=child_run.id,
+        event_type="run_retried",
+        status_to=RunState.QUEUED.value,
+        payload={"parent_run_id": parent_run.id},
+        actor_id=parent_run.created_by,
+        audit_action="run.prompt.retry",
     )
 
     db.commit()

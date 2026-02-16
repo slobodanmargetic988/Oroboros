@@ -21,7 +21,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
 from app.api.approvals import ApproveRequest, RejectRequest, approve_run, reject_run
 from app.db.base import Base
 from app.domain.run_state_machine import FailureReasonCode
-from app.models import Approval, Run, ValidationCheck
+from app.models import Approval, AuditLog, Run, ValidationCheck
 from app.services.merge_gate import MergeGateResult, run_merge_gate_checks
 
 
@@ -88,6 +88,11 @@ class ApprovalEndpointOrchestrationTests(unittest.TestCase):
             self.assertIsNotNone(run)
             self.assertEqual(run.status, "merged")
             self.assertEqual(run.commit_sha, "mergedsha")
+            audit_actions = [item.action for item in db.query(AuditLog).order_by(AuditLog.id.asc()).all()]
+            self.assertIn("run.approve.accepted", audit_actions)
+            self.assertIn("run.merge.started", audit_actions)
+            self.assertIn("run.deploy.started", audit_actions)
+            self.assertIn("run.deploy.completed", audit_actions)
 
     def test_reject_transitions_to_failed_with_reason(self) -> None:
         run_id = self._create_run(status="needs_approval")

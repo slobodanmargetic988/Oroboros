@@ -31,8 +31,9 @@ from app.domain.run_state_machine import (  # noqa: E402
     TransitionRuleError,
     ensure_transition_allowed,
 )
-from app.models import Run, RunArtifact, RunEvent, ValidationCheck  # noqa: E402
+from app.models import Run, RunArtifact, ValidationCheck  # noqa: E402
 from app.services.git_worktree_manager import assign_worktree  # noqa: E402
+from app.services.run_event_log import append_run_event  # noqa: E402
 from app.services.slot_lease_manager import (  # noqa: E402
     acquire_slot_lease,
     heartbeat_slot_lease,
@@ -181,14 +182,14 @@ class WorkerOrchestrator:
                 self.logger.warning("Unable to claim run %s due to invalid transition", run.id)
                 return None
 
-            db.add(
-                RunEvent(
-                    run_id=run.id,
-                    event_type="status_transition",
-                    status_from=status_from,
-                    status_to=status_to,
-                    payload={"source": "worker", "phase": "claim"},
-                )
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="status_transition",
+                status_from=status_from,
+                status_to=status_to,
+                payload={"source": "worker", "phase": "claim"},
+                actor_id=run.created_by,
             )
 
             # SessionLocal uses autoflush=False; flush lease + status writes so
@@ -261,12 +262,12 @@ class WorkerOrchestrator:
             commit_sha = self._resolve_worktree_commit_sha(claimed.worktree_path)
             if commit_sha:
                 run.commit_sha = commit_sha
-                db.add(
-                    RunEvent(
-                        run_id=run.id,
-                        event_type="run_commit_resolved",
-                        payload={"source": "worker", "commit_sha": commit_sha},
-                    )
+                append_run_event(
+                    db,
+                    run_id=run.id,
+                    event_type="run_commit_resolved",
+                    payload={"source": "worker", "commit_sha": commit_sha},
+                    actor_id=run.created_by,
                 )
 
             self._record_output_artifact(
@@ -312,14 +313,15 @@ class WorkerOrchestrator:
                 return
 
             status_from, status_to = transition_run_status(run, target=RunState.TESTING)
-            db.add(
-                RunEvent(
-                    run_id=run.id,
-                    event_type="status_transition",
-                    status_from=status_from,
-                    status_to=status_to,
-                    payload={"source": "worker", "check": "codex_cli_execution"},
-                )
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="status_transition",
+                status_from=status_from,
+                status_to=status_to,
+                payload={"source": "worker", "check": "codex_cli_execution"},
+                actor_id=run.created_by,
+                audit_action="run.test.started",
             )
             # Release the row lock acquired by claim before long-running validation checks.
             db.commit()
@@ -378,33 +380,34 @@ class WorkerOrchestrator:
                 db.rollback()
                 return False
             if run.status == RunState.CANCELED.value:
-                db.add(
-                    RunEvent(
-                        run_id=run.id,
-                        event_type="worker_skipped_canceled_before_execution",
-                        payload={"source": "worker", "slot_id": slot_id},
-                    )
+                append_run_event(
+                    db,
+                    run_id=run.id,
+                    event_type="worker_skipped_canceled_before_execution",
+                    payload={"source": "worker", "slot_id": slot_id},
+                    actor_id=run.created_by,
                 )
                 release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
                 db.commit()
                 return False
 
             status_from, status_to = transition_run_status(run, target=RunState.EDITING)
-            db.add(
-                RunEvent(
-                    run_id=run.id,
-                    event_type="status_transition",
-                    status_from=status_from,
-                    status_to=status_to,
-                    payload={"source": "worker", "slot_id": slot_id},
-                )
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="status_transition",
+                status_from=status_from,
+                status_to=status_to,
+                payload={"source": "worker", "slot_id": slot_id},
+                actor_id=run.created_by,
+                audit_action="run.edit.started",
             )
-            db.add(
-                RunEvent(
-                    run_id=run.id,
-                    event_type="codex_command_started",
-                    payload={"source": "worker", "slot_id": slot_id},
-                )
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="codex_command_started",
+                payload={"source": "worker", "slot_id": slot_id},
+                actor_id=run.created_by,
             )
             db.commit()
             return True
@@ -434,22 +437,23 @@ class WorkerOrchestrator:
                 },
             )
         )
-        db.add(
-            RunEvent(
-                run_id=run.id,
-                event_type="codex_command_finished",
-                payload={
-                    "source": "worker",
-                    "command": command,
-                    "artifact_uri": artifact_uri,
-                    "exit_code": result.exit_code,
-                    "timed_out": result.timed_out,
-                    "canceled": result.canceled,
-                    "lease_expired": result.lease_expired,
-                    "duration_seconds": result.duration_seconds,
-                    "output_excerpt": result.output_excerpt,
-                },
-            )
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="codex_command_finished",
+            payload={
+                "source": "worker",
+                "command": command,
+                "artifact_uri": artifact_uri,
+                "exit_code": result.exit_code,
+                "timed_out": result.timed_out,
+                "canceled": result.canceled,
+                "lease_expired": result.lease_expired,
+                "duration_seconds": result.duration_seconds,
+                "output_excerpt": result.output_excerpt,
+            },
+            actor_id=run.created_by,
+            audit_action="run.edit.completed",
         )
         db.add(
             ValidationCheck(
@@ -488,16 +492,16 @@ class WorkerOrchestrator:
             check_started_at = utcnow()
             output_path = self.artifact_root / run.id / "checks" / f"{check.name}.log"
 
-            db.add(
-                RunEvent(
-                    run_id=run.id,
-                    event_type="validation_check_started",
-                    payload={
-                        "source": "worker",
-                        "check_name": check.name,
-                        "command": check.command,
-                    },
-                )
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="validation_check_started",
+                payload={
+                    "source": "worker",
+                    "check_name": check.name,
+                    "command": check.command,
+                },
+                actor_id=run.created_by,
             )
 
             result = run_codex_command(
@@ -553,23 +557,24 @@ class WorkerOrchestrator:
                     },
                 )
             )
-            db.add(
-                RunEvent(
-                    run_id=run.id,
-                    event_type="validation_check_finished",
-                    payload={
-                        "source": "worker",
-                        "check_name": check.name,
-                        "status": check_status,
-                        "artifact_uri": artifact_uri,
-                        "exit_code": result.exit_code,
-                        "timed_out": result.timed_out,
-                        "canceled": result.canceled,
-                        "lease_expired": result.lease_expired,
-                        "duration_seconds": result.duration_seconds,
-                        "output_excerpt": result.output_excerpt,
-                    },
-                )
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="validation_check_finished",
+                payload={
+                    "source": "worker",
+                    "check_name": check.name,
+                    "status": check_status,
+                    "artifact_uri": artifact_uri,
+                    "exit_code": result.exit_code,
+                    "timed_out": result.timed_out,
+                    "canceled": result.canceled,
+                    "lease_expired": result.lease_expired,
+                    "duration_seconds": result.duration_seconds,
+                    "output_excerpt": result.output_excerpt,
+                },
+                actor_id=run.created_by,
+                audit_action="run.test.check_completed",
             )
 
             if failure_reason is not None:
@@ -584,19 +589,20 @@ class WorkerOrchestrator:
 
     def _finalize_success_run(self, *, db, run: Run, result) -> None:
         status_from, status_to = transition_run_status(run, target=RunState.PREVIEW_READY)
-        db.add(
-            RunEvent(
-                run_id=run.id,
-                event_type="status_transition",
-                status_from=status_from,
-                status_to=status_to,
-                payload={
-                    "source": "worker",
-                    "result": "ready_for_preview",
-                    "exit_code": result.exit_code,
-                    "required_checks": [check.name for check in self.required_checks],
-                },
-            )
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="status_transition",
+            status_from=status_from,
+            status_to=status_to,
+            payload={
+                "source": "worker",
+                "result": "ready_for_preview",
+                "exit_code": result.exit_code,
+                "required_checks": [check.name for check in self.required_checks],
+            },
+            actor_id=run.created_by,
+            audit_action="run.test.completed",
         )
 
     def _finalize_failed_run(
@@ -622,45 +628,56 @@ class WorkerOrchestrator:
         }
         if extra_payload:
             payload.update(extra_payload)
-        db.add(
-            RunEvent(
-                run_id=run.id,
-                event_type="status_transition",
-                status_from=status_from,
-                status_to=status_to,
-                payload=payload,
-            )
+        failure_audit_action = None
+        if status_from == RunState.EDITING.value:
+            failure_audit_action = "run.edit.failed"
+        elif status_from == RunState.TESTING.value:
+            failure_audit_action = "run.test.failed"
+        elif status_from == RunState.MERGING.value:
+            failure_audit_action = "run.merge.failed"
+        elif status_from == RunState.DEPLOYING.value:
+            failure_audit_action = "run.deploy.failed"
+
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="status_transition",
+            status_from=status_from,
+            status_to=status_to,
+            payload=payload,
+            actor_id=run.created_by,
+            audit_action=failure_audit_action,
         )
         release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
 
     def _finalize_expired_run(self, *, db, run: Run, slot_id: str, result) -> None:
         status_from, status_to = transition_run_status(run, target=RunState.EXPIRED)
-        db.add(
-            RunEvent(
-                run_id=run.id,
-                event_type="status_transition",
-                status_from=status_from,
-                status_to=status_to,
-                payload={
-                    "source": "worker",
-                    "reason": FailureReasonCode.PREVIEW_EXPIRED.value,
-                    "lease_expired": result.lease_expired,
-                },
-            )
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="status_transition",
+            status_from=status_from,
+            status_to=status_to,
+            payload={
+                "source": "worker",
+                "reason": FailureReasonCode.PREVIEW_EXPIRED.value,
+                "lease_expired": result.lease_expired,
+            },
+            actor_id=run.created_by,
         )
         release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
 
     def _finalize_canceled_run(self, *, db, run: Run, slot_id: str, result) -> None:
-        db.add(
-            RunEvent(
-                run_id=run.id,
-                event_type="worker_observed_canceled",
-                payload={
-                    "source": "worker",
-                    "exit_code": result.exit_code,
-                    "canceled": True,
-                },
-            )
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="worker_observed_canceled",
+            payload={
+                "source": "worker",
+                "exit_code": result.exit_code,
+                "canceled": True,
+            },
+            actor_id=run.created_by,
         )
         release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
 
