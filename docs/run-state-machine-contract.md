@@ -65,6 +65,12 @@ Rule:
 - `POST /api/runs/{run_id}/retry`
 - `GET /api/runs/contract`
 
+Runs API behavior for MYO-18:
+- `POST /api/runs` persists run context fields (`route`, `note`, `metadata`, optional `page_title`, `element_hint`) into `run_context`.
+- `GET /api/runs` supports pagination via `limit` + `offset`.
+- `GET /api/runs` supports status filtering via repeated `status` query params.
+- `GET /api/runs/{run_id}` returns run payload with persisted context.
+
 ### Events
 - `GET /api/runs/{run_id}/events`
 - `GET /api/runs/{run_id}/events/stream` (stub placeholder)
