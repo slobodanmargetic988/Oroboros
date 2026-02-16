@@ -12,7 +12,7 @@ Generated: 2026-02-16 10:22 UTC
 | MYO-16 | Prep | MYO-15 | Agent work DONE | IN_PROGRESS | codex_dev_done | backend-tester | not_ready | Control-plane schema + Alembic baseline + seed scripts added on codex/myo-16-control-plane-schema |
 | MYO-17 | Prep | MYO-16 | Agent work DONE | IN_PROGRESS | codex_dev_done | backend-tester | not_ready | Run state-machine contract + API skeleton added on codex/myo-17-state-machine-contract |
 | MYO-18 | A1 | MYO-17 | Agent work DONE | IN_PROGRESS | codex_dev_done | backend-tester | not_ready | Runs API create/list/detail with persistent context + pagination/status filters on codex/myo-18-runs-api |
-| MYO-21 | A1 | MYO-18 | Todo | BLOCKED |  | backend-developer | blocked | Waiting for MYO-18 |
+| MYO-21 | A1 | MYO-18 | Agent work DONE | IN_PROGRESS | codex_dev_done | backend-tester | not_ready | Slot lease manager (atomic acquire/release, heartbeat, expiry reaper, queue behavior) implemented on codex/myo-21-slot-lease-manager; handed off to tester |
 | MYO-24 | A1 | MYO-21 | Todo | BLOCKED |  | backend-developer | blocked | Waiting for MYO-21 |
 | MYO-27 | A1 | MYO-24 | Todo | BLOCKED |  | backend-developer | blocked | Waiting for MYO-24 |
 | MYO-30 | A1 | MYO-27 | Todo | BLOCKED |  | backend-developer | blocked | Waiting for MYO-27 |

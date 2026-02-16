@@ -83,6 +83,14 @@ Runs API behavior for MYO-18:
 - `POST /api/runs/{run_id}/approve`
 - `POST /api/runs/{run_id}/reject`
 
+### Slots (MYO-21)
+- `GET /api/slots`
+- `POST /api/slots/acquire`
+- `POST /api/slots/{slot_id}/heartbeat`
+- `POST /api/slots/{slot_id}/release`
+- `POST /api/slots/reap-expired`
+- `GET /api/slots/contract`
+
 ## Parallel Track Expectations
 - Agent-1 consumes this contract for backend state transitions and event semantics.
 - Agent-2 consumes this contract for UI state badges/actions and allowed user actions per state.

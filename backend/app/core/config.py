@@ -8,6 +8,8 @@ class Settings(BaseSettings):
 
     app_name: str = "Ouroboros API"
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/builder_control"
+    slot_ids_csv: str = "preview-1,preview-2,preview-3"
+    slot_lease_ttl_seconds: int = 1800
 
 
 @lru_cache
