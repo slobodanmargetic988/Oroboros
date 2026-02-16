@@ -1,0 +1,27 @@
+{
+    auto_https off
+}
+
+app.example.com {
+    reverse_proxy web-main:8080
+}
+
+preview1.example.com {
+    reverse_proxy web-preview-1:8080
+}
+
+preview2.example.com {
+    reverse_proxy web-preview-2:8080
+}
+
+preview3.example.com {
+    reverse_proxy web-preview-3:8080
+}
+
+api.example.com {
+    reverse_proxy api:8000
+}
+
+worker.example.com {
+    reverse_proxy worker:8090
+}
