@@ -118,6 +118,28 @@ class RunCodexCommandTests(unittest.TestCase):
 
             self.assertTrue(result.lease_expired)
 
+    def test_process_start_failure_returns_failed_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = Path(tmp) / "start-failed.log"
+
+            def failing_popen(*args, **kwargs):  # noqa: ANN002, ANN003
+                raise FileNotFoundError("codex binary not found")
+
+            result = run_codex_command(
+                command=["codex", "run", "hello"],
+                worktree_path=Path(tmp),
+                output_path=output_path,
+                timeout_seconds=30,
+                poll_interval_seconds=0.05,
+                popen_factory=failing_popen,
+            )
+
+            self.assertEqual(result.exit_code, 127)
+            self.assertFalse(result.timed_out)
+            self.assertFalse(result.canceled)
+            self.assertFalse(result.lease_expired)
+            self.assertIn("Failed to start command", output_path.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -64,13 +64,26 @@ def run_codex_command(
     lease_expired = False
     start = time_fn()
 
-    process = popen_factory(
-        command,
-        cwd=str(worktree_path),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
+    try:
+        process = popen_factory(
+            command,
+            cwd=str(worktree_path),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    except OSError as exc:
+        output_text = f"Failed to start command: {exc}"
+        output_path.write_text(output_text, encoding="utf-8")
+        return CommandExecutionResult(
+            exit_code=127,
+            timed_out=False,
+            canceled=False,
+            lease_expired=False,
+            duration_seconds=max(0.0, time_fn() - start),
+            output_path=output_path,
+            output_excerpt=[output_text],
+        )
 
     try:
         while True:

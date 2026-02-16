@@ -138,7 +138,8 @@ class WorkerOrchestrator:
             )
 
     def _execute_claimed_run(self, claimed: ClaimedRun) -> None:
-        self._mark_editing(claimed.run_id, claimed.slot_id)
+        if not self._mark_editing(claimed.run_id, claimed.slot_id):
+            return
 
         output_path = self.artifact_root / claimed.run_id / "codex.stdout.log"
         command = build_codex_command(claimed.prompt, claimed.worktree_path)
@@ -230,15 +231,23 @@ class WorkerOrchestrator:
             self._finalize_success_run(db=db, run=run, result=result)
             db.commit()
 
-    def _mark_editing(self, run_id: str, slot_id: str) -> None:
+    def _mark_editing(self, run_id: str, slot_id: str) -> bool:
         with SessionLocal() as db:
             run = db.query(Run).filter(Run.id == run_id).with_for_update().first()
             if run is None:
                 db.rollback()
-                return
+                return False
             if run.status == RunState.CANCELED.value:
+                db.add(
+                    RunEvent(
+                        run_id=run.id,
+                        event_type="worker_skipped_canceled_before_execution",
+                        payload={"source": "worker", "slot_id": slot_id},
+                    )
+                )
+                release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
                 db.commit()
-                return
+                return False
 
             status_from, status_to = transition_run_status(run, target=RunState.EDITING)
             db.add(
@@ -258,6 +267,7 @@ class WorkerOrchestrator:
                 )
             )
             db.commit()
+            return True
 
     def _record_output_artifact(
         self,

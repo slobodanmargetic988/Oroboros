@@ -129,5 +129,73 @@ class ClaimPathLeaseVisibilityRegressionTests(unittest.TestCase):
             self.assertTrue(any(event.status_to == "planning" for event in events))
 
 
+class CanceledBeforeExecutionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = create_engine("sqlite+pysqlite:///:memory:")
+        Base.metadata.create_all(self.engine)
+        self.session_factory = sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
+
+        with self.session_factory() as db:
+            run = Run(
+                title="Canceled run",
+                prompt="Do not execute",
+                status="canceled",
+                route="/codex",
+                slot_id="preview-1",
+            )
+            db.add(run)
+            db.commit()
+            self.run_id = run.id
+
+            now = _utcnow()
+            db.add(
+                SlotLease(
+                    slot_id="preview-1",
+                    run_id=self.run_id,
+                    lease_state="leased",
+                    leased_at=now,
+                    expires_at=now + timedelta(minutes=10),
+                    heartbeat_at=now,
+                )
+            )
+            db.commit()
+
+    def tearDown(self) -> None:
+        Base.metadata.drop_all(self.engine)
+        self.engine.dispose()
+
+    def test_worker_does_not_execute_codex_for_canceled_run(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+
+        claimed = worker_orchestrator.ClaimedRun(
+            run_id=self.run_id,
+            prompt="Do not execute",
+            slot_id="preview-1",
+            worktree_path=Path(temp_dir.name),
+        )
+
+        with (
+            patch.object(worker_orchestrator, "SessionLocal", self.session_factory),
+            patch.object(worker_orchestrator, "build_codex_command") as build_cmd,
+            patch.object(worker_orchestrator, "run_codex_command") as run_cmd,
+        ):
+            orchestrator = worker_orchestrator.WorkerOrchestrator()
+            orchestrator._execute_claimed_run(claimed)
+
+        build_cmd.assert_not_called()
+        run_cmd.assert_not_called()
+
+        with self.session_factory() as db:
+            lease = db.query(SlotLease).filter(SlotLease.slot_id == "preview-1").first()
+            self.assertIsNotNone(lease)
+            self.assertEqual(lease.lease_state, "released")
+
+            events = db.query(RunEvent).filter(RunEvent.run_id == self.run_id).all()
+            self.assertTrue(
+                any(event.event_type == "worker_skipped_canceled_before_execution" for event in events)
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
