@@ -1,30 +1,22 @@
 # SPRINT_PLAN
-Generated: 2026-02-16 11:11 UTC
+Generated: 2026-02-16 11:32 UTC
 Agent: sprint-orchestrator-agent
 
 ## Scope
 - Project: Ouroboros
 - Team: Myownmint
 - Tracked issues: MYO-14..MYO-44 (existing issues only)
-- Mode: Planning/orchestration only (no implementation execution)
+- Mode: Planning/orchestration only
 - Merge mode: sequential
 
-## Workflow Lock (team statuses)
-Use these statuses exactly to prevent parallel agent collisions:
-1. Todo
-2. Agent working (task claimed by developer)
-3. Agent work DONE (developer handoff complete)
-4. Agent testing (task claimed by tester)
-5. Agent test DONE (tester handoff complete)
-6. Agent review (task claimed by reviewer agent)
-7. Agent review DONE (review agent done)
-8. Human Review
-9. Done
+## Platform Constraint (Hard)
+- Deploy to a clean Linux server instance using host services/processes only.
+- Do not use Docker, Docker Compose, Kubernetes, or any container runtime.
+- Any task proposal that introduces containers is out of policy and must be rejected/reworked.
 
-## Ownership Rule
-- Exactly one issue owner phase at a time.
-- Any issue in `Agent working`, `Agent testing`, or `Agent review` is considered locked/taken.
-- Next agent may start only when prior phase reaches `... DONE` state.
+## Workflow Lock (to avoid duplicate pickup)
+- Todo -> Agent working -> Agent work DONE -> Agent testing -> Agent test DONE -> Agent review -> Agent review DONE -> Human Review -> Done
+- `Agent working`, `Agent testing`, `Agent review` are lock states (exclusive owner).
 
 ## Dependency Map
 - Prep: MYO-14 -> MYO-15 -> MYO-16 -> MYO-17
@@ -32,23 +24,16 @@ Use these statuses exactly to prevent parallel agent collisions:
 - A2: MYO-19 -> MYO-22 -> MYO-25 -> MYO-29 -> MYO-31 -> MYO-34 -> MYO-37 -> MYO-40
 - A3: MYO-20 -> MYO-23 -> MYO-26 -> MYO-28 -> MYO-32 -> MYO-35 -> MYO-38 -> MYO-41
 - Integration: MYO-42 -> MYO-43 -> MYO-44
-- Integration gate: MYO-42 waits for MYO-39, MYO-40, MYO-41 completion
 
-## Linear Snapshot (this cycle)
+## Current Snapshot
 - MYO-14: Human Review
-- MYO-15..MYO-44: Todo
+- MYO-15: Agent work DONE
+- Remaining tracked issues: Todo
 
 ## Ready Now
-1. MYO-14
-   - Stage: Human Review gate
-   - Action: finalize review decision -> Done (or back to Agent review/Agent working if changes requested)
+1. MYO-14 (Human Review): finalize review decision to Done or back to rework.
+2. MYO-15 (Agent work DONE): tester phase is prepared, but start only once MYO-14 is Done to preserve strict prep ordering.
 
-## Blocked Gateways
-- MYO-15 blocked by MYO-14 (requires MYO-14 Done)
-- MYO-16 blocked by MYO-15
-- MYO-17 blocked by MYO-16
-- MYO-18/MYO-19/MYO-20 blocked by MYO-17
-- MYO-42 blocked by MYO-39/MYO-40/MYO-41
-
-## New Issues
-- None created in this cycle
+## Linear Updates Applied (this cycle)
+- Updated descriptions for MYO-15, MYO-20, MYO-23, MYO-26, MYO-28, MYO-32, MYO-35, MYO-38, MYO-41, MYO-42, MYO-43, MYO-44
+- Added explicit non-container deployment constraints to each above issue
