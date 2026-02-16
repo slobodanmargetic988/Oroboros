@@ -744,6 +744,10 @@ class WorkerOrchestrator:
             "timed_out": result.timed_out,
             "trace_id": trace_id,
         }
+        if failure_reason == FailureReasonCode.AGENT_TIMEOUT:
+            payload["recoverable"] = True
+            payload["recovery_strategy"] = "create_child_run"
+            payload["resume_endpoint"] = f"/api/runs/{run.id}/resume"
         if extra_payload:
             payload.update(extra_payload)
         db.add(
@@ -789,6 +793,9 @@ class WorkerOrchestrator:
                     "reason": FailureReasonCode.PREVIEW_EXPIRED.value,
                     "lease_expired": result.lease_expired,
                     "trace_id": trace_id,
+                    "recoverable": True,
+                    "recovery_strategy": "create_child_run",
+                    "resume_endpoint": f"/api/runs/{run.id}/resume",
                 },
             )
         )

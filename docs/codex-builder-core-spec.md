@@ -202,6 +202,7 @@ Approval actions:
 3. `GET /api/runs/{run_id}` details.
 4. `POST /api/runs/{run_id}/cancel` cancel.
 5. `POST /api/runs/{run_id}/retry` retry as child run.
+6. `POST /api/runs/{run_id}/resume` resume via child run for recoverable timeout outcomes.
 
 ### 18.2 Review
 1. `GET /api/runs/{run_id}/diff` diff payload.

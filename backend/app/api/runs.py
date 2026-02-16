@@ -18,8 +18,10 @@ from app.domain.run_state_machine import (
     list_run_states,
 )
 from app.models import Run, RunContext, RunEvent
+from app.services.git_worktree_manager import cleanup_worktree
 from app.services.observability import current_trace_id, emit_structured_log, ensure_trace_id
 from app.services.run_event_log import append_run_event
+from app.services.slot_lease_manager import release_slot_lease
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -72,6 +74,12 @@ class RunListResponse(BaseModel):
     offset: int
 
 
+RECOVERABLE_TIMEOUT_REASONS = {
+    FailureReasonCode.AGENT_TIMEOUT.value,
+    FailureReasonCode.PREVIEW_EXPIRED.value,
+}
+
+
 def _to_run_response(run: Run, run_context: RunContext | None = None) -> RunResponse:
     context = None
     if run_context is not None:
@@ -119,11 +127,107 @@ def _get_run_or_404(db: Session, run_id: str) -> Run:
     return run
 
 
+def _transition_or_409(
+    run: Run,
+    *,
+    target_state: RunState,
+    failure_reason_code: FailureReasonCode | None = None,
+) -> tuple[str, str]:
+    current_state = RunState(run.status)
+    try:
+        ensure_transition_allowed(current_state, target_state, failure_reason_code)
+    except TransitionRuleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    run.status = target_state.value
+    return current_state.value, target_state.value
+
+
+def _latest_failure_reason_code(db: Session, run_id: str) -> str | None:
+    row = (
+        db.query(RunEvent)
+        .filter(
+            RunEvent.run_id == run_id,
+            RunEvent.event_type == "status_transition",
+            RunEvent.status_to.in_([RunState.FAILED.value, RunState.EXPIRED.value]),
+        )
+        .order_by(RunEvent.created_at.desc(), RunEvent.id.desc())
+        .first()
+    )
+    if row is None:
+        return None
+
+    payload = row.payload if isinstance(row.payload, dict) else {}
+    reason = payload.get("failure_reason_code")
+    if isinstance(reason, str) and reason:
+        return reason
+
+    fallback = payload.get("reason")
+    if isinstance(fallback, str) and fallback:
+        return fallback
+    return None
+
+
+def _create_child_run_from_parent(
+    db: Session,
+    *,
+    parent_run: Run,
+    event_type: str,
+    event_payload: dict[str, Any],
+    audit_action: str,
+    trace_id: str | None = None,
+) -> tuple[Run, RunContext]:
+    parent_context = db.query(RunContext).filter(RunContext.run_id == parent_run.id).first()
+
+    child_run = Run(
+        title=f"Retry: {parent_run.title}",
+        prompt=parent_run.prompt,
+        status=RunState.QUEUED.value,
+        route=parent_run.route,
+        created_by=parent_run.created_by,
+        parent_run_id=parent_run.id,
+    )
+    db.add(child_run)
+    db.flush()
+
+    inherited_context_metadata = (
+        dict(parent_context.metadata_json)
+        if parent_context is not None and isinstance(parent_context.metadata_json, dict)
+        else None
+    )
+    if trace_id:
+        if inherited_context_metadata is None:
+            inherited_context_metadata = {}
+        inherited_context_metadata.setdefault("trace_id", trace_id)
+
+    child_context = RunContext(
+        run_id=child_run.id,
+        route=parent_context.route if parent_context else parent_run.route,
+        page_title=parent_context.page_title if parent_context else None,
+        element_hint=parent_context.element_hint if parent_context else None,
+        note=parent_context.note if parent_context else None,
+        metadata_json=inherited_context_metadata,
+    )
+    db.add(child_context)
+
+    append_run_event(
+        db,
+        run_id=child_run.id,
+        event_type=event_type,
+        status_to=RunState.QUEUED.value,
+        payload=event_payload,
+        actor_id=parent_run.created_by,
+        audit_action=audit_action,
+    )
+    return child_run, child_context
+
+
 @router.get("/contract")
 def run_contract() -> dict[str, Any]:
     return {
         "states": list_run_states(),
         "failure_reason_codes": list_failure_reason_codes(),
+        "recoverable_timeout_reason_codes": sorted(RECOVERABLE_TIMEOUT_REASONS),
     }
 
 
@@ -247,16 +351,11 @@ def transition_run(
 ) -> RunResponse:
     trace_id = current_trace_id()
     run = _get_run_or_404(db, run_id)
-
-    current_state = RunState(run.status)
-    target_state = payload.to_status
-
-    try:
-        ensure_transition_allowed(current_state, target_state, payload.failure_reason_code)
-    except TransitionRuleError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-    run.status = target_state.value
+    status_from, status_to = _transition_or_409(
+        run,
+        target_state=payload.to_status,
+        failure_reason_code=payload.failure_reason_code,
+    )
 
     event_payload: dict[str, Any] = {}
     if payload.failure_reason_code is not None:
@@ -264,14 +363,13 @@ def transition_run(
     if trace_id:
         event_payload["trace_id"] = trace_id
 
-    db.add(
-        RunEvent(
-            run_id=run.id,
-            event_type="status_transition",
-            status_from=current_state.value,
-            status_to=target_state.value,
-            payload=event_payload or None,
-        )
+    append_run_event(
+        db,
+        run_id=run.id,
+        event_type="status_transition",
+        status_from=status_from,
+        status_to=status_to,
+        payload=event_payload or None,
     )
 
     db.commit()
@@ -284,58 +382,72 @@ def transition_run(
         run_id=run.id,
         slot_id=run.slot_id,
         commit_sha=run.commit_sha,
-        status_from=current_state.value,
-        status_to=target_state.value,
+        status_from=status_from,
+        status_to=status_to,
     )
     return _to_run_response(run, run_context)
 
 
 @router.post("/{run_id}/cancel", response_model=RunResponse)
 def cancel_run(run_id: str, db: Session = Depends(get_db_session)) -> RunResponse:
-    payload = TransitionRunRequest(to_status=RunState.CANCELED)
-    return transition_run(run_id=run_id, payload=payload, db=db)
+    run = _get_run_or_404(db, run_id)
+    status_from, status_to = _transition_or_409(run, target_state=RunState.CANCELED)
+
+    cleanup_result: dict[str, Any]
+    lease_release_result: dict[str, Any]
+    if run.slot_id:
+        slot_id = run.slot_id
+        try:
+            cleanup_result = cleanup_worktree(db=db, slot_id=slot_id, run_id=run.id)
+        except ValueError as exc:
+            cleanup_result = {"cleaned": False, "slot_id": slot_id, "run_id": run.id, "reason": str(exc)}
+        lease_release_result = release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
+    else:
+        cleanup_result = {
+            "cleaned": False,
+            "slot_id": None,
+            "run_id": run.id,
+            "reason": "run_slot_not_assigned",
+        }
+        lease_release_result = {
+            "released": False,
+            "slot_id": None,
+            "run_id": run.id,
+            "reason": "run_slot_not_assigned",
+        }
+
+    append_run_event(
+        db,
+        run_id=run.id,
+        event_type="status_transition",
+        status_from=status_from,
+        status_to=status_to,
+        payload={
+            "source": "cancel_endpoint",
+            "resource_cleanup": cleanup_result,
+            "lease_release": lease_release_result,
+        },
+        actor_id=run.created_by,
+        audit_action="run.cancel.requested",
+    )
+
+    db.commit()
+    db.refresh(run)
+    run_context = db.query(RunContext).filter(RunContext.run_id == run.id).first()
+    return _to_run_response(run, run_context)
 
 
 @router.post("/{run_id}/retry", response_model=RunResponse)
 def retry_run(run_id: str, db: Session = Depends(get_db_session)) -> RunResponse:
     trace_id = current_trace_id()
     parent_run = _get_run_or_404(db, run_id)
-    parent_context = db.query(RunContext).filter(RunContext.run_id == parent_run.id).first()
-
-    child_run = Run(
-        title=f"Retry: {parent_run.title}",
-        prompt=parent_run.prompt,
-        status=RunState.QUEUED.value,
-        route=parent_run.route,
-        created_by=parent_run.created_by,
-        parent_run_id=parent_run.id,
-    )
-    db.add(child_run)
-    db.flush()
-
-    inherited_metadata = {}
-    if parent_context and isinstance(parent_context.metadata_json, dict):
-        inherited_metadata = dict(parent_context.metadata_json)
-
-    child_context = RunContext(
-        run_id=child_run.id,
-        route=parent_context.route if parent_context else parent_run.route,
-        page_title=parent_context.page_title if parent_context else None,
-        element_hint=parent_context.element_hint if parent_context else None,
-        note=parent_context.note if parent_context else None,
-        metadata_json=inherited_metadata,
-    )
-    if isinstance(child_context.metadata_json, dict) and trace_id:
-        child_context.metadata_json["trace_id"] = trace_id
-    db.add(child_context)
-
-    db.add(
-        RunEvent(
-            run_id=child_run.id,
-            event_type="run_retried",
-            status_to=RunState.QUEUED.value,
-            payload={"parent_run_id": parent_run.id, "trace_id": trace_id},
-        )
+    child_run, child_context = _create_child_run_from_parent(
+        db,
+        parent_run=parent_run,
+        event_type="run_retried",
+        event_payload={"parent_run_id": parent_run.id, "trace_id": trace_id},
+        audit_action="run.prompt.retry",
+        trace_id=trace_id,
     )
 
     db.commit()
@@ -350,4 +462,35 @@ def retry_run(run_id: str, db: Session = Depends(get_db_session)) -> RunResponse
         commit_sha=child_run.commit_sha,
         parent_run_id=parent_run.id,
     )
+    return _to_run_response(child_run, child_context)
+
+
+@router.post("/{run_id}/resume", response_model=RunResponse)
+def resume_run(run_id: str, db: Session = Depends(get_db_session)) -> RunResponse:
+    parent_run = _get_run_or_404(db, run_id)
+    if parent_run.status not in {RunState.FAILED.value, RunState.EXPIRED.value}:
+        raise HTTPException(status_code=409, detail="resume_requires_failed_or_expired_run")
+
+    failure_reason_code = _latest_failure_reason_code(db, parent_run.id)
+    if failure_reason_code not in RECOVERABLE_TIMEOUT_REASONS:
+        raise HTTPException(
+            status_code=409,
+            detail=f"resume_not_supported_for_reason:{failure_reason_code or 'unknown'}",
+        )
+
+    child_run, child_context = _create_child_run_from_parent(
+        db,
+        parent_run=parent_run,
+        event_type="run_resumed",
+        event_payload={
+            "parent_run_id": parent_run.id,
+            "recovery_reason_code": failure_reason_code,
+            "recovery_strategy": "create_child_run",
+        },
+        audit_action="run.timeout.resumed",
+    )
+
+    db.commit()
+    db.refresh(child_run)
+    db.refresh(child_context)
     return _to_run_response(child_run, child_context)

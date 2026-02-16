@@ -63,6 +63,7 @@ Rule:
 - `POST /api/runs/{run_id}/transition`
 - `POST /api/runs/{run_id}/cancel`
 - `POST /api/runs/{run_id}/retry`
+- `POST /api/runs/{run_id}/resume`
 - `GET /api/runs/contract`
 
 Runs API behavior for MYO-18:
@@ -70,6 +71,16 @@ Runs API behavior for MYO-18:
 - `GET /api/runs` supports pagination via `limit` + `offset`.
 - `GET /api/runs` supports status filtering via repeated `status` query params.
 - `GET /api/runs/{run_id}` returns run payload with persisted context.
+- `POST /api/runs/{run_id}/cancel` transitions to `canceled` and performs deterministic resource release attempts (worktree cleanup + slot lease release) in the same operation.
+- `POST /api/runs/{run_id}/retry` creates a child run linked via `parent_run_id`.
+- `POST /api/runs/{run_id}/resume` is allowed only for recoverable timeout outcomes and creates a child recovery run.
+
+Timeout recovery behavior for MYO-39:
+- Recoverable reason codes: `AGENT_TIMEOUT`, `PREVIEW_EXPIRED`.
+- Failed/expired transition payloads include:
+  - `recoverable: true`
+  - `recovery_strategy: create_child_run`
+  - `resume_endpoint: /api/runs/{run_id}/resume`
 
 ### Events
 - `GET /api/runs/{run_id}/events`
