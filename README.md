@@ -25,10 +25,13 @@ This repository contains the initial runtime boundaries for the Codex Builder Co
    - `./scripts/runtime-up.sh`
 6. Verify core service health checks:
    - `./scripts/runtime-health-check.sh`
-7. Read topology and operation guides:
+7. Run preview smoke/E2E harness (headless):
+   - `./scripts/preview-smoke-e2e.sh --preview-url <preview_url>`
+8. Read topology and operation guides:
    - `docs/runtime-topology.md`
    - `docs/deployment-flow.md`
    - `docs/preview-runtime-slots.md`
+   - `docs/preview-smoke-e2e-harness.md`
    - `docs/db-bootstrap-and-migrations.md`
    - `docs/run-state-machine-contract.md`
    - `docs/slot-lease-manager-contract.md`
