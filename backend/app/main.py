@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.artifacts import router as artifacts_router
 from app.api.approvals import router as approvals_router
 from app.api.checks import router as checks_router
 from app.api.events import router as events_router
@@ -17,4 +18,5 @@ app.include_router(slots_router)
 app.include_router(worktrees_router)
 app.include_router(events_router)
 app.include_router(checks_router)
+app.include_router(artifacts_router)
 app.include_router(approvals_router)

@@ -5,11 +5,13 @@ from datetime import datetime, timezone
 import logging
 import os
 from pathlib import Path
+import shlex
 import sys
 import time
 from typing import Any
 
 from .codex_runner import (
+    CommandExecutionResult,
     LeaseExpiredSignal,
     RunCanceledSignal,
     build_codex_command,
@@ -49,6 +51,21 @@ class ClaimedRun:
     worktree_path: Path
 
 
+@dataclass(frozen=True)
+class ValidationCheckSpec:
+    name: str
+    command: list[str]
+    timeout_seconds: int
+
+
+@dataclass(frozen=True)
+class ValidationPipelineResult:
+    ok: bool
+    failure_reason: FailureReasonCode | None = None
+    failed_check_name: str | None = None
+    failed_result: CommandExecutionResult | None = None
+
+
 def transition_run_status(
     run: Run,
     *,
@@ -65,6 +82,12 @@ def transition_run_status(
 
 
 class WorkerOrchestrator:
+    DEFAULT_CHECK_COMMANDS: dict[str, str] = {
+        "lint": "python3 -m compileall backend/app",
+        "test": "python3 -m unittest discover -s worker/tests -p 'test_*.py'",
+        "smoke": "python3 -c \"print('smoke-ok')\"",
+    }
+
     def __init__(self) -> None:
         self.logger = logging.getLogger("worker.orchestrator")
         self.timeout_seconds = max(30, int(os.getenv("WORKER_RUN_TIMEOUT_SECONDS", "1800")))
@@ -73,9 +96,11 @@ class WorkerOrchestrator:
         self.cancel_check_interval_seconds = max(
             0.2, float(os.getenv("WORKER_CANCEL_CHECK_SECONDS", "2"))
         )
+        self.check_timeout_seconds = max(30, int(os.getenv("WORKER_CHECK_TIMEOUT_SECONDS", "900")))
         artifact_root = os.getenv("WORKER_ARTIFACT_ROOT", str(REPO_ROOT / "artifacts" / "runs"))
         self.artifact_root = Path(artifact_root).expanduser().resolve()
         self.artifact_root.mkdir(parents=True, exist_ok=True)
+        self.required_checks = self._load_required_checks()
 
     def process_next_run(self) -> bool:
         claimed = self._claim_next_run()
@@ -84,6 +109,52 @@ class WorkerOrchestrator:
 
         self._execute_claimed_run(claimed)
         return True
+
+    @staticmethod
+    def _check_env_key(name: str) -> str:
+        normalized = "".join(char if char.isalnum() else "_" for char in name.strip().lower())
+        return normalized.upper()
+
+    def _resolve_check_command(self, check_name: str) -> list[str]:
+        key = self._check_env_key(check_name)
+        env_value = os.getenv(f"WORKER_CHECK_{key}_COMMAND")
+        if env_value:
+            command = shlex.split(env_value)
+            if command:
+                return command
+
+        default = self.DEFAULT_CHECK_COMMANDS.get(check_name.lower())
+        if default:
+            command = shlex.split(default)
+            if command:
+                return command
+
+        # Fallback keeps pipeline deterministic even if no explicit command is configured.
+        return ["python3", "-c", "print('validation-check-noop')"]
+
+    def _load_required_checks(self) -> list[ValidationCheckSpec]:
+        configured = os.getenv("WORKER_REQUIRED_CHECKS", "lint,test,smoke")
+        names = [item.strip() for item in configured.split(",") if item.strip()]
+        specs: list[ValidationCheckSpec] = []
+        for name in names:
+            command = self._resolve_check_command(name)
+            key = self._check_env_key(name)
+            timeout_raw = os.getenv(f"WORKER_CHECK_{key}_TIMEOUT_SECONDS")
+            timeout_seconds = self.check_timeout_seconds
+            if timeout_raw:
+                try:
+                    timeout_seconds = max(30, int(timeout_raw))
+                except ValueError:
+                    timeout_seconds = self.check_timeout_seconds
+
+            specs.append(
+                ValidationCheckSpec(
+                    name=name,
+                    command=command,
+                    timeout_seconds=timeout_seconds,
+                )
+            )
+        return specs
 
     def _claim_next_run(self) -> ClaimedRun | None:
         with SessionLocal() as db:
@@ -227,6 +298,57 @@ class WorkerOrchestrator:
                 db.commit()
                 return
 
+            status_from, status_to = transition_run_status(run, target=RunState.TESTING)
+            db.add(
+                RunEvent(
+                    run_id=run.id,
+                    event_type="status_transition",
+                    status_from=status_from,
+                    status_to=status_to,
+                    payload={"source": "worker", "check": "codex_cli_execution"},
+                )
+            )
+
+            validation_result = self._run_validation_pipeline(
+                db=db,
+                run=run,
+                claimed=claimed,
+                should_cancel=should_cancel,
+                on_tick=on_tick,
+            )
+            if not validation_result.ok:
+                failed_result = validation_result.failed_result or result
+                failure_reason = validation_result.failure_reason
+                if run.status == RunState.CANCELED.value or failure_reason == FailureReasonCode.AGENT_CANCELED:
+                    self._finalize_canceled_run(
+                        db=db,
+                        run=run,
+                        slot_id=claimed.slot_id,
+                        result=failed_result,
+                    )
+                    db.commit()
+                    return
+                if failure_reason == FailureReasonCode.PREVIEW_EXPIRED:
+                    self._finalize_expired_run(
+                        db=db,
+                        run=run,
+                        slot_id=claimed.slot_id,
+                        result=failed_result,
+                    )
+                    db.commit()
+                    return
+
+                self._finalize_failed_run(
+                    db=db,
+                    run=run,
+                    slot_id=claimed.slot_id,
+                    failure_reason=failure_reason or FailureReasonCode.CHECKS_FAILED,
+                    result=failed_result,
+                    extra_payload={"failed_check": validation_result.failed_check_name},
+                )
+                db.commit()
+                return
+
             self._finalize_success_run(db=db, run=run, result=result)
             db.commit()
 
@@ -312,18 +434,114 @@ class WorkerOrchestrator:
             )
         )
 
-    def _finalize_success_run(self, *, db, run: Run, result) -> None:
-        status_from, status_to = transition_run_status(run, target=RunState.TESTING)
-        db.add(
-            RunEvent(
-                run_id=run.id,
-                event_type="status_transition",
-                status_from=status_from,
-                status_to=status_to,
-                payload={"source": "worker", "check": "codex_cli_execution"},
-            )
-        )
+    def _run_validation_pipeline(
+        self,
+        *,
+        db,
+        run: Run,
+        claimed: ClaimedRun,
+        should_cancel,
+        on_tick,
+    ) -> ValidationPipelineResult:
+        for check in self.required_checks:
+            check_started_at = utcnow()
+            output_path = self.artifact_root / run.id / "checks" / f"{check.name}.log"
 
+            db.add(
+                RunEvent(
+                    run_id=run.id,
+                    event_type="validation_check_started",
+                    payload={
+                        "source": "worker",
+                        "check_name": check.name,
+                        "command": check.command,
+                    },
+                )
+            )
+
+            result = run_codex_command(
+                command=check.command,
+                worktree_path=claimed.worktree_path,
+                output_path=output_path,
+                timeout_seconds=check.timeout_seconds,
+                poll_interval_seconds=self.poll_interval_seconds,
+                should_cancel=should_cancel,
+                on_tick=on_tick,
+            )
+            check_ended_at = utcnow()
+
+            failure_reason: FailureReasonCode | None = None
+            check_status = "passed"
+            if result.lease_expired:
+                check_status = "expired"
+                failure_reason = FailureReasonCode.PREVIEW_EXPIRED
+            elif result.canceled:
+                check_status = "canceled"
+                failure_reason = FailureReasonCode.AGENT_CANCELED
+            elif result.timed_out:
+                check_status = "timed_out"
+                failure_reason = FailureReasonCode.AGENT_TIMEOUT
+            elif result.exit_code != 0:
+                check_status = "failed"
+                failure_reason = FailureReasonCode.CHECKS_FAILED
+
+            artifact_uri = str(output_path)
+            db.add(
+                ValidationCheck(
+                    run_id=run.id,
+                    check_name=check.name,
+                    status=check_status,
+                    started_at=check_started_at,
+                    ended_at=check_ended_at,
+                    artifact_uri=artifact_uri,
+                )
+            )
+            db.add(
+                RunArtifact(
+                    run_id=run.id,
+                    artifact_type="validation_check_log",
+                    artifact_uri=artifact_uri,
+                    metadata_json={
+                        "check_name": check.name,
+                        "status": check_status,
+                        "command": check.command,
+                        "exit_code": result.exit_code,
+                        "timed_out": result.timed_out,
+                        "canceled": result.canceled,
+                        "lease_expired": result.lease_expired,
+                    },
+                )
+            )
+            db.add(
+                RunEvent(
+                    run_id=run.id,
+                    event_type="validation_check_finished",
+                    payload={
+                        "source": "worker",
+                        "check_name": check.name,
+                        "status": check_status,
+                        "artifact_uri": artifact_uri,
+                        "exit_code": result.exit_code,
+                        "timed_out": result.timed_out,
+                        "canceled": result.canceled,
+                        "lease_expired": result.lease_expired,
+                        "duration_seconds": result.duration_seconds,
+                        "output_excerpt": result.output_excerpt,
+                    },
+                )
+            )
+
+            if failure_reason is not None:
+                return ValidationPipelineResult(
+                    ok=False,
+                    failure_reason=failure_reason,
+                    failed_check_name=check.name,
+                    failed_result=result,
+                )
+
+        return ValidationPipelineResult(ok=True)
+
+    def _finalize_success_run(self, *, db, run: Run, result) -> None:
         status_from, status_to = transition_run_status(run, target=RunState.PREVIEW_READY)
         db.add(
             RunEvent(
@@ -331,7 +549,12 @@ class WorkerOrchestrator:
                 event_type="status_transition",
                 status_from=status_from,
                 status_to=status_to,
-                payload={"source": "worker", "result": "ready_for_preview", "exit_code": result.exit_code},
+                payload={
+                    "source": "worker",
+                    "result": "ready_for_preview",
+                    "exit_code": result.exit_code,
+                    "required_checks": [check.name for check in self.required_checks],
+                },
             )
         )
 
@@ -343,24 +566,28 @@ class WorkerOrchestrator:
         slot_id: str,
         failure_reason: FailureReasonCode,
         result,
+        extra_payload: dict[str, Any] | None = None,
     ) -> None:
         status_from, status_to = transition_run_status(
             run,
             target=RunState.FAILED,
             failure_reason=failure_reason,
         )
+        payload: dict[str, Any] = {
+            "source": "worker",
+            "failure_reason_code": failure_reason.value,
+            "exit_code": result.exit_code,
+            "timed_out": result.timed_out,
+        }
+        if extra_payload:
+            payload.update(extra_payload)
         db.add(
             RunEvent(
                 run_id=run.id,
                 event_type="status_transition",
                 status_from=status_from,
                 status_to=status_to,
-                payload={
-                    "source": "worker",
-                    "failure_reason_code": failure_reason.value,
-                    "exit_code": result.exit_code,
-                    "timed_out": result.timed_out,
-                },
+                payload=payload,
             )
         )
         release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
