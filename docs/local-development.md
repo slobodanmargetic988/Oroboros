@@ -45,6 +45,23 @@ Query release registry records:
 ./scripts/release-registry.sh list --limit 20
 ```
 
+Run preview smoke/E2E harness against host-routed preview slots:
+```bash
+./scripts/preview-smoke-e2e.sh \
+  --preview-url preview1.example.com \
+  --proxy-origin http://127.0.0.1:8088 \
+  --changed-route /codex
+```
+
+Persist harness result for a run into validation tables:
+```bash
+./scripts/preview-smoke-e2e.sh \
+  --preview-url preview1.example.com \
+  --proxy-origin http://127.0.0.1:8088 \
+  --run-id <run_id> \
+  --persist-validation
+```
+
 Allocate one preview slot for a run (includes DB reset + seed flow):
 ```bash
 ./scripts/preview-slot-allocate.sh --run-id <run_id> --seed-version v1 --strategy seed

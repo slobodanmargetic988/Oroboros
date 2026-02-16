@@ -82,5 +82,12 @@ Use `scripts/runtime-health-check.sh` for one-command verification.
 - Health gate: `scripts/runtime-health-check.sh` (restore previous target on failure)
 - Release registry updates recorded in control-plane DB (`releases` table)
 
+## Preview Smoke/E2E Harness (MYO-32)
+- Command: `./scripts/preview-smoke-e2e.sh --preview-url <preview_url>`
+- Changed routes: add repeated `--changed-route /path`
+- Host-routed local execution: add `--proxy-origin http://127.0.0.1:8088`
+- Output: machine-readable JSON artifact and stdout summary for validation pipeline use
+- Optional persistence: `--run-id <run_id> --persist-validation` stores records in `validation_checks` + `run_artifacts`
+
 ## Non-container Constraint
 This topology intentionally avoids Docker/Compose/Kubernetes and runs services directly as host processes under `systemd`.
