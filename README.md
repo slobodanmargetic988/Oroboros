@@ -26,4 +26,5 @@ This repository contains the initial runtime boundaries for the Codex Builder Co
 6. Read topology and operation guides:
    - `docs/runtime-topology.md`
    - `docs/db-bootstrap-and-migrations.md`
+   - `docs/run-state-machine-contract.md`
    - `docs/local-development.md`
