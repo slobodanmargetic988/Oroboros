@@ -25,6 +25,7 @@ Details: `docs/db-bootstrap-and-migrations.md`
 ## 3) Install and start runtime services (systemd)
 ```bash
 ./scripts/systemd-install-runtime.sh
+./scripts/preview-slots-provision.sh
 ./scripts/runtime-up.sh
 ./scripts/runtime-health-check.sh
 ```
@@ -32,6 +33,11 @@ Details: `docs/db-bootstrap-and-migrations.md`
 Stop runtime stack:
 ```bash
 ./scripts/runtime-down.sh
+```
+
+Preview slot-only health checks:
+```bash
+./scripts/preview-slots-health-check.sh
 ```
 
 ## 4) Optional service-by-service mode
