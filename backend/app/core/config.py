@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/builder_control"
     slot_ids_csv: str = "preview-1,preview-2,preview-3"
     slot_lease_ttl_seconds: int = 1800
+    repo_root_path: str = "/srv/oroboros/repo"
+    worktree_root_path: str = "/srv/oroboros/worktrees"
 
 
 @lru_cache

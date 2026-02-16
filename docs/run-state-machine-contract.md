@@ -91,6 +91,17 @@ Runs API behavior for MYO-18:
 - `POST /api/slots/reap-expired`
 - `GET /api/slots/contract`
 
+### Worktrees (MYO-24)
+- `GET /api/worktrees`
+- `POST /api/worktrees/assign`
+- `POST /api/worktrees/{slot_id}/cleanup`
+- `GET /api/worktrees/contract`
+
+Worktree manager behavior for MYO-24:
+- Branch naming is enforced as `codex/run-<run_id>`.
+- Slot assignment persists slot-to-worktree binding in `slot_worktree_bindings`.
+- Assignment supports create/reuse and cleanup updates both run events and audit log entries.
+
 ## Parallel Track Expectations
 - Agent-1 consumes this contract for backend state transitions and event semantics.
 - Agent-2 consumes this contract for UI state badges/actions and allowed user actions per state.
