@@ -28,4 +28,5 @@ This repository contains the initial runtime boundaries for the Codex Builder Co
    - `docs/preview-runtime-slots.md`
    - `docs/db-bootstrap-and-migrations.md`
    - `docs/run-state-machine-contract.md`
+   - `docs/slot-lease-manager-contract.md`
    - `docs/local-development.md`
