@@ -1,0 +1,292 @@
+{
+  "started_at": "2026-02-16T21:56:38.231088+00:00",
+  "task": "MYO-42",
+  "mode": "validation-only",
+  "steps": {
+    "run_created": {
+      "id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "title": "MYO-42 integration retry",
+      "prompt": "Validation run for MYO-42",
+      "status": "queued",
+      "route": "/",
+      "slot_id": null,
+      "branch_name": null,
+      "worktree_path": null,
+      "commit_sha": null,
+      "parent_run_id": null,
+      "created_by": null,
+      "created_at": "2026-02-16T22:56:38.242208+01:00",
+      "updated_at": "2026-02-16T22:56:38.242222+01:00",
+      "context": {
+        "route": "/",
+        "page_title": null,
+        "element_hint": null,
+        "note": "integration retry validation",
+        "metadata": {
+          "trace_id": "e199dbc07700499c9fb74bc82eadb3b2"
+        }
+      }
+    },
+    "stale_run_cleanup": {
+      "canceled_run_ids": []
+    },
+    "pre_approval_state": {
+      "id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "title": "MYO-42 integration retry",
+      "prompt": "Validation run for MYO-42",
+      "status": "failed",
+      "route": "/",
+      "slot_id": null,
+      "branch_name": "codex/run-ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "worktree_path": "/Users/slobodan/Projects/Oroboros/.worktrees/preview-1",
+      "commit_sha": "1fade310d9187236d263dd1fcc93d88ab0bcbe02",
+      "parent_run_id": null,
+      "created_by": null,
+      "created_at": "2026-02-16T22:56:38.242208+01:00",
+      "updated_at": "2026-02-16T22:59:42.219933+01:00",
+      "context": {
+        "route": "/",
+        "page_title": null,
+        "element_hint": null,
+        "note": "integration retry validation",
+        "metadata": {
+          "trace_id": "e199dbc07700499c9fb74bc82eadb3b2"
+        }
+      }
+    },
+    "run_final": {
+      "id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "title": "MYO-42 integration retry",
+      "prompt": "Validation run for MYO-42",
+      "status": "failed",
+      "route": "/",
+      "slot_id": null,
+      "branch_name": "codex/run-ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "worktree_path": "/Users/slobodan/Projects/Oroboros/.worktrees/preview-1",
+      "commit_sha": "1fade310d9187236d263dd1fcc93d88ab0bcbe02",
+      "parent_run_id": null,
+      "created_by": null,
+      "created_at": "2026-02-16T22:56:38.242208+01:00",
+      "updated_at": "2026-02-16T22:59:42.219933+01:00",
+      "context": {
+        "route": "/",
+        "page_title": null,
+        "element_hint": null,
+        "note": "integration retry validation",
+        "metadata": {
+          "trace_id": "e199dbc07700499c9fb74bc82eadb3b2"
+        }
+      }
+    },
+    "post_deploy_health_default": {
+      "cmd": "./scripts/runtime-health-check.sh",
+      "exit_code": 1,
+      "stdout": "[check] api health\n[check] worker health\n[check] proxy app.example.com\n[check] preview1 direct health\n[check] preview2 direct health\n[check] preview3 direct health\n[check] preview1 routed health\n[check] preview2 routed health\n[check] preview3 routed health\nPreview slot health checks passed.\n[check] postgres health\n[check] redis health\n",
+      "stderr": "./scripts/runtime-health-check.sh: line 8: redis-cli: command not found\n"
+    },
+    "post_deploy_health_fallback": {
+      "cmd": "curl -fsS http://127.0.0.1:8000/health >/dev/null && curl -fsS http://127.0.0.1:8090/health >/dev/null && ./scripts/preview-slots-health-check.sh >/dev/null",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  "timeline": [
+    {
+      "at": "2026-02-16T21:56:38.264037+00:00",
+      "status": "queued",
+      "slot_id": null,
+      "commit_sha": null,
+      "branch_name": null
+    },
+    {
+      "at": "2026-02-16T21:59:42.582357+00:00",
+      "status": "failed",
+      "slot_id": null,
+      "commit_sha": "1fade310d9187236d263dd1fcc93d88ab0bcbe02",
+      "branch_name": "codex/run-ba64d8f4-5977-45e0-a491-ae915ce56c50"
+    }
+  ],
+  "run_id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+  "events_count": 10,
+  "events": [
+    {
+      "schema_version": 1,
+      "id": 96,
+      "run_id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "event_type": "run_created",
+      "status_from": null,
+      "status_to": "queued",
+      "payload": {
+        "source": "api",
+        "context": {
+          "route": "/",
+          "note": "integration retry validation",
+          "metadata": {
+            "trace_id": "e199dbc07700499c9fb74bc82eadb3b2"
+          }
+        },
+        "trace_id": "e199dbc07700499c9fb74bc82eadb3b2",
+        "schema_version": 1
+      },
+      "created_at": "2026-02-16T22:56:38.247759+01:00"
+    },
+    {
+      "schema_version": 1,
+      "id": 99,
+      "run_id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "event_type": "slot_acquired",
+      "status_from": null,
+      "status_to": null,
+      "payload": {
+        "slot_id": "preview-1",
+        "expires_at": "2026-02-16T22:29:41.930609+00:00",
+        "ttl_seconds": 1800,
+        "schema_version": 1
+      },
+      "created_at": "2026-02-16T22:59:41.937162+01:00"
+    },
+    {
+      "schema_version": 1,
+      "id": 100,
+      "run_id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "event_type": "status_transition",
+      "status_from": "queued",
+      "status_to": "planning",
+      "payload": {
+        "source": "worker",
+        "phase": "claim",
+        "trace_id": "e199dbc07700499c9fb74bc82eadb3b2",
+        "schema_version": 1
+      },
+      "created_at": "2026-02-16T22:59:41.937164+01:00"
+    },
+    {
+      "schema_version": 1,
+      "id": 101,
+      "run_id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "event_type": "worktree_assigned",
+      "status_from": null,
+      "status_to": null,
+      "payload": {
+        "slot_id": "preview-1",
+        "run_id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+        "branch_name": "codex/run-ba64d8f4-5977-45e0-a491-ae915ce56c50",
+        "worktree_path": "/Users/slobodan/Projects/Oroboros/.worktrees/preview-1",
+        "reused": false,
+        "schema_version": 1
+      },
+      "created_at": "2026-02-16T22:59:42.174800+01:00"
+    },
+    {
+      "schema_version": 1,
+      "id": 102,
+      "run_id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "event_type": "status_transition",
+      "status_from": "planning",
+      "status_to": "editing",
+      "payload": {
+        "source": "worker",
+        "slot_id": "preview-1",
+        "trace_id": "e199dbc07700499c9fb74bc82eadb3b2",
+        "schema_version": 1
+      },
+      "created_at": "2026-02-16T22:59:42.185158+01:00"
+    },
+    {
+      "schema_version": 1,
+      "id": 103,
+      "run_id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "event_type": "codex_command_started",
+      "status_from": null,
+      "status_to": null,
+      "payload": {
+        "source": "worker",
+        "slot_id": "preview-1",
+        "trace_id": "e199dbc07700499c9fb74bc82eadb3b2",
+        "schema_version": 1
+      },
+      "created_at": "2026-02-16T22:59:42.185159+01:00"
+    },
+    {
+      "schema_version": 1,
+      "id": 104,
+      "run_id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "event_type": "run_commit_resolved",
+      "status_from": null,
+      "status_to": null,
+      "payload": {
+        "source": "worker",
+        "commit_sha": "1fade310d9187236d263dd1fcc93d88ab0bcbe02",
+        "trace_id": "e199dbc07700499c9fb74bc82eadb3b2",
+        "schema_version": 1
+      },
+      "created_at": "2026-02-16T22:59:42.221609+01:00"
+    },
+    {
+      "schema_version": 1,
+      "id": 105,
+      "run_id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "event_type": "codex_command_finished",
+      "status_from": null,
+      "status_to": null,
+      "payload": {
+        "source": "worker",
+        "command": [
+          "codex",
+          "Validation run for MYO-42"
+        ],
+        "artifact_uri": "/Users/slobodan/Projects/Oroboros/artifacts/runs/ba64d8f4-5977-45e0-a491-ae915ce56c50/codex.stdout.log",
+        "exit_code": 126,
+        "timed_out": false,
+        "canceled": false,
+        "lease_expired": false,
+        "duration_seconds": 0.0003512919938657433,
+        "output_excerpt": [
+          "Blocked by path allowlist: /Users/slobodan/Projects/Oroboros/.worktrees/preview-1"
+        ],
+        "trace_id": "e199dbc07700499c9fb74bc82eadb3b2",
+        "schema_version": 1
+      },
+      "created_at": "2026-02-16T22:59:42.221611+01:00"
+    },
+    {
+      "schema_version": 1,
+      "id": 106,
+      "run_id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "event_type": "status_transition",
+      "status_from": "editing",
+      "status_to": "failed",
+      "payload": {
+        "source": "worker",
+        "failure_reason_code": "UNKNOWN_ERROR",
+        "exit_code": 126,
+        "timed_out": false,
+        "trace_id": "e199dbc07700499c9fb74bc82eadb3b2",
+        "schema_version": 1
+      },
+      "created_at": "2026-02-16T22:59:42.221611+01:00"
+    },
+    {
+      "schema_version": 1,
+      "id": 107,
+      "run_id": "ba64d8f4-5977-45e0-a491-ae915ce56c50",
+      "event_type": "slot_released",
+      "status_from": null,
+      "status_to": null,
+      "payload": {
+        "slot_id": "preview-1",
+        "schema_version": 1
+      },
+      "created_at": "2026-02-16T22:59:42.221612+01:00"
+    }
+  ],
+  "summary": {
+    "overall_status": "failed",
+    "run_status": "failed",
+    "default_health_exit_code": 1,
+    "fallback_health_exit_code": 0,
+    "events_count": 10
+  },
+  "ended_at": "2026-02-16T21:59:42.878159+00:00"
+}

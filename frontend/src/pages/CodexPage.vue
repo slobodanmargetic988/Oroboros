@@ -574,11 +574,35 @@ onUnmounted(() => {
 
 <style scoped>
 .codex-page {
+  position: relative;
+  isolation: isolate;
   max-width: 980px;
   margin: 0 auto;
   padding: 2.5rem 1.2rem 3rem;
   display: grid;
   gap: 1.2rem;
+}
+
+.codex-page::before {
+  content: "";
+  position: fixed;
+  top: 5.2rem;
+  left: 50%;
+  width: 100vw;
+  height: 78vh;
+  transform: translateX(-50%);
+  background-image: url("/Ouroboros.png");
+  background-repeat: no-repeat;
+  background-position: center top;
+  background-size: 100% auto;
+  opacity: 0.26;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.codex-page > * {
+  position: relative;
+  z-index: 1;
 }
 
 .hero {
@@ -943,6 +967,12 @@ button:disabled {
 }
 
 @media (max-width: 800px) {
+  .codex-page::before {
+    top: 4.4rem;
+    height: 72vh;
+    opacity: 0.22;
+  }
+
   .row,
   .panel-head {
     grid-template-columns: 1fr;
