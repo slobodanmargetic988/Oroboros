@@ -1,13 +1,20 @@
 <template>
   <Teleport to="body">
-    <div v-if="isOpen" class="overlay-shell" role="dialog" aria-modal="true" aria-label="Codex quick prompt">
-      <button class="overlay-backdrop" aria-label="Close quick prompt" @click="closeOverlay" />
+    <div
+      v-if="isOpen"
+      class="overlay-shell"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="quick-codex-title"
+      aria-describedby="quick-codex-subhead"
+    >
+      <button type="button" class="overlay-backdrop" aria-label="Close quick prompt" @click="closeOverlay" />
 
-      <section class="overlay-card">
+      <section ref="overlayCardRef" class="overlay-card">
         <header class="overlay-head">
           <p class="overlay-eyebrow">Global Shortcut</p>
-          <h2>Quick Codex Prompt</h2>
-          <p class="overlay-subhead">Current route will be attached automatically.</p>
+          <h2 id="quick-codex-title">Quick Codex Prompt</h2>
+          <p id="quick-codex-subhead" class="overlay-subhead">Current route will be attached automatically.</p>
         </header>
 
         <form class="overlay-form" @submit.prevent="submitRun">
@@ -38,8 +45,8 @@
             <button :disabled="submitting" type="button" class="secondary" @click="closeOverlay">Cancel</button>
           </div>
 
-          <p v-if="submitError" class="overlay-error">{{ submitError }}</p>
-          <p v-if="submitSuccess" class="overlay-success">{{ submitSuccess }}</p>
+          <p v-if="submitError" class="overlay-error" role="alert">{{ submitError }}</p>
+          <p v-if="submitSuccess" class="overlay-success" role="status">{{ submitSuccess }}</p>
           <p class="overlay-hint">Shortcut: Cmd/Ctrl+K to open, Esc to close.</p>
         </form>
       </section>
@@ -64,8 +71,10 @@ const submitting = ref(false);
 const submitError = ref("");
 const submitSuccess = ref("");
 const promptInputRef = ref<HTMLTextAreaElement | null>(null);
+const overlayCardRef = ref<HTMLElement | null>(null);
 const overlaySessionId = ref(0);
 const pendingCloseTimeoutId = ref<number | null>(null);
+let previouslyFocusedElement: HTMLElement | null = null;
 
 const ROUTE_MAX_LENGTH = 255;
 const currentRoutePath = computed(() => {
@@ -84,6 +93,10 @@ function closeOverlay() {
   }
   overlaySessionId.value += 1;
   isOpen.value = false;
+  if (previouslyFocusedElement) {
+    previouslyFocusedElement.focus();
+    previouslyFocusedElement = null;
+  }
 }
 
 async function openOverlay() {
@@ -92,6 +105,7 @@ async function openOverlay() {
     pendingCloseTimeoutId.value = null;
   }
   overlaySessionId.value += 1;
+  previouslyFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   isOpen.value = true;
   submitError.value = "";
   submitSuccess.value = "";
@@ -154,12 +168,45 @@ async function submitRun() {
   }
 }
 
+function trapFocus(event: KeyboardEvent): void {
+  const container = overlayCardRef.value;
+  if (!container) {
+    return;
+  }
+
+  const focusable = container.querySelectorAll<HTMLElement>(
+    "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+  );
+  if (!focusable.length) {
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement as HTMLElement | null;
+
+  if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+    return;
+  }
+
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+  }
+}
+
 async function handleShortcut(event: KeyboardEvent) {
   const isShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
   if (!isShortcut || event.shiftKey || event.altKey) {
     if (event.key === "Escape" && isOpen.value) {
       event.preventDefault();
       closeOverlay();
+      return;
+    }
+    if (event.key === "Tab" && isOpen.value) {
+      trapFocus(event);
     }
     return;
   }

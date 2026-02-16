@@ -4,7 +4,7 @@
       <article v-for="item in toasts" :key="`toast-${item.id}`" class="toast-item">
         <div class="toast-top">
           <strong>{{ item.title }}</strong>
-          <button class="icon-btn" @click="dismissToast(item.id)">x</button>
+          <button type="button" class="icon-btn" @click="dismissToast(item.id)">x</button>
         </div>
         <p class="toast-message">{{ item.message }}</p>
         <div class="toast-meta">
@@ -15,12 +15,12 @@
     </section>
 
     <aside class="inbox-shell">
-      <button class="inbox-toggle" @click="toggleInbox">
+      <button type="button" class="inbox-toggle" :aria-expanded="inboxOpen ? 'true' : 'false'" aria-controls="run-notification-inbox" @click="toggleInbox">
         Notifications
         <span v-if="unseenCount" class="inbox-count">{{ unseenCount }}</span>
       </button>
 
-      <section v-if="inboxOpen" class="inbox-panel" aria-label="Notifications inbox">
+      <section v-if="inboxOpen" id="run-notification-inbox" class="inbox-panel" aria-label="Notifications inbox">
         <header class="inbox-head">
           <p>Run Notifications</p>
           <div class="inbox-actions">
@@ -30,8 +30,10 @@
         </header>
 
         <p class="inbox-user">User: <code>{{ userId }}</code></p>
+        <p v-if="loadError" class="inbox-error" role="alert">{{ loadError }}</p>
 
-        <ul v-if="notifications.length" class="inbox-list">
+        <p v-if="loading && !notifications.length" class="empty">Loading notifications...</p>
+        <ul v-else-if="notifications.length" class="inbox-list">
           <li
             v-for="item in notifications"
             :key="item.id"
@@ -77,6 +79,8 @@ const WATCHED_STATUSES = new Set(["preview_ready", "failed", "merged", "canceled
 const notifications = ref<RunNotificationItem[]>([]);
 const toasts = ref<RunNotificationItem[]>([]);
 const inboxOpen = ref(false);
+const loading = ref(false);
+const loadError = ref("");
 const userId = ref("local-user");
 const previousRunStatusById = ref<Record<string, string>>({});
 
@@ -240,42 +244,60 @@ function formatDate(value: string): string {
 }
 
 async function refreshRunsForNotifications(): Promise<void> {
+  if (!initialized) {
+    loading.value = true;
+  }
+  loadError.value = "";
+
   const params = new URLSearchParams({
     limit: "200",
     offset: "0",
   });
 
-  const response = await fetch(`${apiBaseUrl}/api/runs?${params.toString()}`);
-  if (!response.ok) {
-    return;
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/runs?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error(`Run notifications fetch failed (${response.status})`);
+    }
+
+    const payload = (await response.json()) as RunListResponse;
+    const nextStatusMap: Record<string, string> = {};
+
+    payload.items.forEach((run) => {
+      const currentStatus = run.status.toLowerCase();
+      const previousStatus = previousRunStatusById.value[run.id]?.toLowerCase();
+
+      nextStatusMap[run.id] = run.status;
+
+      if (!WATCHED_STATUSES.has(currentStatus)) {
+        return;
+      }
+
+      if (!initialized) {
+        return;
+      }
+
+      if (previousStatus === currentStatus) {
+        return;
+      }
+
+      addNotification(createNotificationFromRun(run));
+    });
+
+    previousRunStatusById.value = nextStatusMap;
+    initialized = true;
+  } catch (error) {
+    loadError.value = (error as Error).message;
+  } finally {
+    loading.value = false;
   }
+}
 
-  const payload = (await response.json()) as RunListResponse;
-  const nextStatusMap: Record<string, string> = {};
-
-  payload.items.forEach((run) => {
-    const currentStatus = run.status.toLowerCase();
-    const previousStatus = previousRunStatusById.value[run.id]?.toLowerCase();
-
-    nextStatusMap[run.id] = run.status;
-
-    if (!WATCHED_STATUSES.has(currentStatus)) {
-      return;
-    }
-
-    if (!initialized) {
-      return;
-    }
-
-    if (previousStatus === currentStatus) {
-      return;
-    }
-
-    addNotification(createNotificationFromRun(run));
-  });
-
-  previousRunStatusById.value = nextStatusMap;
-  initialized = true;
+function handleInboxHotkeys(event: KeyboardEvent): void {
+  if (event.key === "Escape" && inboxOpen.value) {
+    event.preventDefault();
+    inboxOpen.value = false;
+  }
 }
 
 onMounted(() => {
@@ -286,12 +308,14 @@ onMounted(() => {
   pollHandle = setInterval(() => {
     void refreshRunsForNotifications();
   }, 5000);
+  window.addEventListener("keydown", handleInboxHotkeys);
 });
 
 onUnmounted(() => {
   if (pollHandle) {
     clearInterval(pollHandle);
   }
+  window.removeEventListener("keydown", handleInboxHotkeys);
 
   toastTimeoutById.forEach((timeoutId) => {
     window.clearTimeout(timeoutId);
@@ -431,6 +455,12 @@ onUnmounted(() => {
   margin: 0;
   color: #64748b;
   font-size: 0.78rem;
+}
+
+.inbox-error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 0.82rem;
 }
 
 .inbox-list {
