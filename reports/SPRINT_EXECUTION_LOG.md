@@ -8,7 +8,7 @@ Generated: 2026-02-16 11:32 UTC
 | MYO-16 | Prep | MYO-15 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | migration-integrity tester pass on branch `codex/myo-16-control-plane-schema` |
 | MYO-17 | Prep | MYO-16 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | run-state-machine contract tester pass on branch `codex/myo-17-state-machine-contract` |
 | MYO-18 | A1 | MYO-17 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | runs API/persistence tester pass on branch `codex/myo-18-runs-api` |
-| MYO-21 | A1 | MYO-18 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
+| MYO-21 | A1 | MYO-18 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | slot lease manager tester pass on branch `codex/myo-21-slot-lease-manager` |
 | MYO-24 | A1 | MYO-21 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-27 | A1 | MYO-24 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-30 | A1 | MYO-27 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
@@ -16,7 +16,7 @@ Generated: 2026-02-16 11:32 UTC
 | MYO-36 | A1 | MYO-33 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-39 | A1 | MYO-36 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-19 | A2 | MYO-17 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | /codex UI + runs inbox tester pass on branch `codex/myo-19-codex-page-runs-inbox` |
-| MYO-22 | A2 | MYO-19 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
+| MYO-22 | A2 | MYO-19 | Todo | blocked | BLOCKED |  | frontend-developer | tester gate blocked: awaiting `Agent work DONE` + handoff metadata |
 | MYO-25 | A2 | MYO-22 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
 | MYO-29 | A2 | MYO-25 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
 | MYO-31 | A2 | MYO-29 | Todo | blocked | BLOCKED |  | frontend-developer | n/a |
