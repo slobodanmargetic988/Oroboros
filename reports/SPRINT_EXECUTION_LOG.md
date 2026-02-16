@@ -20,7 +20,7 @@ Generated: 2026-02-16 10:22 UTC
 | MYO-36 | A1 | MYO-33 | Todo | BLOCKED |  | backend-developer | blocked | Waiting for MYO-33 |
 | MYO-39 | A1 | MYO-36 | Todo | BLOCKED |  | backend-developer | blocked | Waiting for MYO-36 |
 | MYO-19 | A2 | MYO-17 | Agent work DONE | IN_PROGRESS | codex_dev_done | frontend-tester | not_ready | /codex page + prompt submit + live runs inbox with status chips on codex/myo-19-codex-page-runs-inbox |
-| MYO-22 | A2 | MYO-19 | Todo | BLOCKED |  | frontend-developer | blocked | Waiting for MYO-19 |
+| MYO-22 | A2 | MYO-19 | Agent work DONE | IN_PROGRESS | codex_dev_done | frontend-tester | not_ready | Run details view implemented (timeline, checks/logs, artifact links, failure reasons) on `codex/myo-22-run-details-view` |
 | MYO-25 | A2 | MYO-22 | Todo | BLOCKED |  | frontend-developer | blocked | Waiting for MYO-22 |
 | MYO-29 | A2 | MYO-25 | Todo | BLOCKED |  | frontend-developer | blocked | Waiting for MYO-25 |
 | MYO-31 | A2 | MYO-29 | Todo | BLOCKED |  | frontend-developer | blocked | Waiting for MYO-29 |
