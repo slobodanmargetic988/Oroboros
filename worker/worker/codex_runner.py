@@ -53,6 +53,7 @@ def run_codex_command(
     poll_interval_seconds: float,
     should_cancel: Callable[[], bool] | None = None,
     on_tick: Callable[[], None] | None = None,
+    env: dict[str, str] | None = None,
     popen_factory: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
     time_fn: Callable[[], float] = time.monotonic,
     sleep_fn: Callable[[float], None] = time.sleep,
@@ -71,6 +72,7 @@ def run_codex_command(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            env={**os.environ, **(env or {})},
         )
     except OSError as exc:
         output_text = f"Failed to start command: {exc}"

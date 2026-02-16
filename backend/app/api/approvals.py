@@ -15,6 +15,7 @@ from app.domain.run_state_machine import (
 )
 from app.models import Approval, Run, RunEvent
 from app.services.merge_gate import merge_run_commit_to_main, run_merge_gate_checks
+from app.services.observability import current_trace_id, emit_structured_log
 from app.services.slot_lease_manager import release_slot_lease
 
 router = APIRouter(prefix="/api", tags=["approvals"])
@@ -81,6 +82,14 @@ def _add_status_transition_event(
     )
 
 
+def _with_trace(payload: dict | None, trace_id: str | None) -> dict | None:
+    if not trace_id:
+        return payload
+    enriched = dict(payload or {})
+    enriched["trace_id"] = trace_id
+    return enriched
+
+
 @router.get("/runs/{run_id}/approvals", response_model=list[ApprovalResponse])
 def list_run_approvals(run_id: str, db: Session = Depends(get_db_session)) -> list[ApprovalResponse]:
     approvals = (
@@ -104,6 +113,7 @@ def list_run_approvals(run_id: str, db: Session = Depends(get_db_session)) -> li
 
 @router.post("/runs/{run_id}/approve", response_model=ApprovalResponse)
 def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_db_session)) -> ApprovalResponse:
+    trace_id = current_trace_id()
     run = _get_run_or_404(db, run_id)
 
     # Allow direct approve when run is preview_ready by advancing to needs_approval first.
@@ -114,7 +124,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
             run=run,
             status_from=status_from,
             status_to=status_to,
-            payload={"source": "approve_endpoint", "phase": "auto_needs_approval"},
+            payload=_with_trace({"source": "approve_endpoint", "phase": "auto_needs_approval"}, trace_id),
         )
 
     status_from, status_to = _transition_or_409(run, target=RunState.APPROVED)
@@ -123,7 +133,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
         run=run,
         status_from=status_from,
         status_to=status_to,
-        payload={"source": "approve_endpoint", "phase": "approved"},
+        payload=_with_trace({"source": "approve_endpoint", "phase": "approved"}, trace_id),
     )
 
     approval = Approval(
@@ -138,7 +148,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
             event_type="approval_decision",
             status_from=status_from,
             status_to=status_to,
-            payload={"decision": "approved", "reason": payload.reason},
+            payload=_with_trace({"decision": "approved", "reason": payload.reason}, trace_id),
         )
     )
     db.add(approval)
@@ -155,12 +165,15 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
             run=run,
             status_from=failed_from,
             status_to=failed_to,
-            payload={
+            payload=_with_trace(
+                {
                 "source": "merge_gate",
                 "failure_reason_code": (gate_result.failure_reason or FailureReasonCode.CHECKS_FAILED).value,
                 "failed_check": gate_result.failed_check,
                 "detail": gate_result.detail,
-            },
+                },
+                trace_id,
+            ),
         )
         db.commit()
         db.refresh(approval)
@@ -179,7 +192,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
         run=run,
         status_from=merging_from,
         status_to=merging_to,
-        payload={"source": "merge_gate", "phase": "merge_start"},
+        payload=_with_trace({"source": "merge_gate", "phase": "merge_start"}, trace_id),
     )
 
     merge_ok, merged_sha, merge_error = merge_run_commit_to_main(db=db, run=run)
@@ -194,11 +207,14 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
             run=run,
             status_from=failed_from,
             status_to=failed_to,
-            payload={
+            payload=_with_trace(
+                {
                 "source": "merge_gate",
                 "failure_reason_code": FailureReasonCode.MERGE_CONFLICT.value,
                 "detail": merge_error,
-            },
+                },
+                trace_id,
+            ),
         )
         db.commit()
         db.refresh(approval)
@@ -220,7 +236,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
         run=run,
         status_from=deploying_from,
         status_to=deploying_to,
-        payload={"source": "merge_gate", "phase": "deploy_start"},
+        payload=_with_trace({"source": "merge_gate", "phase": "deploy_start"}, trace_id),
     )
 
     merged_from, merged_to = _transition_or_409(run, target=RunState.MERGED)
@@ -229,7 +245,10 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
         run=run,
         status_from=merged_from,
         status_to=merged_to,
-        payload={"source": "merge_gate", "phase": "merge_complete", "merged_commit_sha": run.commit_sha},
+        payload=_with_trace(
+            {"source": "merge_gate", "phase": "merge_complete", "merged_commit_sha": run.commit_sha},
+            trace_id,
+        ),
     )
     if run.slot_id:
         release_slot_id = run.slot_id
@@ -239,16 +258,28 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
                 RunEvent(
                     run_id=run.id,
                     event_type="slot_release_skipped",
-                    payload={
+                    payload=_with_trace(
+                        {
                         "source": "merge_gate",
                         "slot_id": release_slot_id,
                         "reason": release_result.get("reason"),
-                    },
+                        },
+                        trace_id,
+                    ),
                 )
             )
 
     db.commit()
     db.refresh(approval)
+    emit_structured_log(
+        component="api.approvals",
+        event="run_approved",
+        trace_id=trace_id,
+        run_id=run.id,
+        slot_id=run.slot_id,
+        commit_sha=run.commit_sha,
+        decision="approved",
+    )
 
     return ApprovalResponse(
         id=approval.id,
@@ -262,6 +293,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
 
 @router.post("/runs/{run_id}/reject", response_model=ApprovalResponse)
 def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db_session)) -> ApprovalResponse:
+    trace_id = current_trace_id()
     run = _get_run_or_404(db, run_id)
     status_from, status_to = _transition_or_409(
         run,
@@ -281,11 +313,14 @@ def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db
             event_type="approval_decision",
             status_from=status_from,
             status_to=status_to,
-            payload={
+            payload=_with_trace(
+                {
                 "decision": "rejected",
                 "reason": payload.reason,
                 "failure_reason_code": payload.failure_reason_code.value,
-            },
+                },
+                trace_id,
+            ),
         )
     )
     _add_status_transition_event(
@@ -293,15 +328,28 @@ def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db
         run=run,
         status_from=status_from,
         status_to=status_to,
-        payload={
+        payload=_with_trace(
+            {
             "source": "reject_endpoint",
             "failure_reason_code": payload.failure_reason_code.value,
             "reason": payload.reason,
-        },
+            },
+            trace_id,
+        ),
     )
     db.add(approval)
     db.commit()
     db.refresh(approval)
+    emit_structured_log(
+        component="api.approvals",
+        event="run_rejected",
+        trace_id=trace_id,
+        run_id=run.id,
+        slot_id=run.slot_id,
+        commit_sha=run.commit_sha,
+        decision="rejected",
+        failure_reason_code=payload.failure_reason_code.value,
+    )
 
     return ApprovalResponse(
         id=approval.id,
