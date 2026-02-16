@@ -27,7 +27,7 @@ Generated: 2026-02-16 10:22 UTC
 | MYO-34 | A2 | MYO-31 | Todo | BLOCKED |  | frontend-developer | blocked | Waiting for MYO-31 |
 | MYO-37 | A2 | MYO-34 | Todo | BLOCKED |  | frontend-developer | blocked | Waiting for MYO-34 |
 | MYO-40 | A2 | MYO-37 | Todo | BLOCKED |  | frontend-developer | blocked | Waiting for MYO-37 |
-| MYO-20 | A3 | MYO-17 | Todo | BLOCKED |  | backend-developer | blocked | Prep gate not complete |
+| MYO-20 | A3 | MYO-17 | Agent work DONE | IN_PROGRESS | codex_dev_done | backend-tester | not_ready | Preview runtime slots provisioned via systemd+caddy automation on codex/myo-20-preview-runtime-slots |
 | MYO-23 | A3 | MYO-20 | Todo | BLOCKED |  | backend-developer | blocked | Waiting for MYO-20 |
 | MYO-26 | A3 | MYO-23 | Todo | BLOCKED |  | backend-developer | blocked | Waiting for MYO-23 |
 | MYO-28 | A3 | MYO-26 | Todo | BLOCKED |  | backend-developer | blocked | Waiting for MYO-26 |

@@ -39,6 +39,11 @@ Defined in `infra/caddy/Caddyfile`:
 - `api.example.com` -> `127.0.0.1:8000`
 - `worker.example.com` -> `127.0.0.1:8090`
 
+Preview slot-specific provisioning/health contract:
+- `docs/preview-runtime-slots.md`
+- `scripts/preview-slots-provision.sh`
+- `scripts/preview-slots-health-check.sh`
+
 ## Core Environment Values
 - API (`/etc/oroboros/api.env`):
   - `DATABASE_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5432/builder_control`
