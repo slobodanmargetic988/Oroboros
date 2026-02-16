@@ -1,5 +1,5 @@
 <template>
-  <div class="run-details-page">
+  <div class="run-details-page" role="main" :aria-busy="loading ? 'true' : 'false'">
     <header class="hero">
       <div>
         <p class="eyebrow">Codex Run</p>
@@ -12,10 +12,13 @@
     <section class="panel">
       <div class="panel-head">
         <h2>Run Summary</h2>
-        <button :disabled="loading" @click="refreshDetails">{{ loading ? "Refreshing..." : "Refresh" }}</button>
+        <button type="button" :disabled="loading" aria-keyshortcuts="Alt+R" @click="refreshDetails">
+          {{ loading ? "Refreshing..." : "Refresh" }}
+        </button>
       </div>
 
-      <p v-if="loadError" class="error">{{ loadError }}</p>
+      <p v-if="loadError" class="error" role="alert">{{ loadError }}</p>
+      <p v-else-if="loading && !run" class="empty">Loading run details...</p>
 
       <div v-if="run" class="summary-grid">
         <div>
@@ -151,16 +154,16 @@
       </div>
 
       <div class="decision-actions">
-        <button class="btn-approve" :disabled="!canSubmitDecision || actionBusy" @click="approveRun">
+        <button class="btn-approve" type="button" :disabled="!canSubmitDecision || actionBusy" @click="approveRun">
           {{ actionBusy ? "Submitting..." : "Approve Run" }}
         </button>
-        <button class="btn-reject" :disabled="!canSubmitDecision || actionBusy" @click="rejectRun">
+        <button class="btn-reject" type="button" :disabled="!canSubmitDecision || actionBusy" @click="rejectRun">
           {{ actionBusy ? "Submitting..." : "Reject Run" }}
         </button>
       </div>
 
-      <p v-if="actionError" class="error">{{ actionError }}</p>
-      <p v-if="actionSuccess" class="success">{{ actionSuccess }}</p>
+      <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
+      <p v-if="actionSuccess" class="success" role="status">{{ actionSuccess }}</p>
 
       <h3>Decision History</h3>
       <ul v-if="approvals.length" class="approvals-list">
@@ -456,6 +459,25 @@ async function rejectRun() {
   }
 }
 
+function isTypingTarget(event: KeyboardEvent): boolean {
+  const target = event.target as HTMLElement | null;
+  if (!target) {
+    return false;
+  }
+  const tagName = target.tagName.toLowerCase();
+  return tagName === "input" || tagName === "textarea" || tagName === "select" || target.isContentEditable;
+}
+
+async function handleDetailsHotkeys(event: KeyboardEvent) {
+  if (isTypingTarget(event)) {
+    return;
+  }
+  if (event.altKey && event.key.toLowerCase() === "r") {
+    event.preventDefault();
+    await refreshDetails();
+  }
+}
+
 watch(runId, () => {
   void refreshDetails();
 });
@@ -465,12 +487,14 @@ onMounted(() => {
   pollHandle = setInterval(() => {
     void refreshDetails({ silent: true });
   }, 5000);
+  window.addEventListener("keydown", handleDetailsHotkeys);
 });
 
 onUnmounted(() => {
   if (pollHandle) {
     clearInterval(pollHandle);
   }
+  window.removeEventListener("keydown", handleDetailsHotkeys);
 });
 </script>
 
@@ -860,12 +884,32 @@ button:disabled {
   .review-grid {
     grid-template-columns: 1fr;
   }
+
+  .event-top,
+  .check-top,
+  .approval-top {
+    align-items: start;
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 800px) {
   .hero {
     grid-template-columns: 1fr;
     display: grid;
+  }
+
+  .panel-head {
+    flex-direction: column;
+    align-items: start;
+  }
+
+  .summary-meta,
+  .check-meta,
+  .event-meta {
+    gap: 0.5rem;
+    flex-direction: column;
+    align-items: start;
   }
 }
 </style>

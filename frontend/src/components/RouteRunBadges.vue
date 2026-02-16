@@ -1,12 +1,14 @@
 <template>
-  <aside v-if="relatedRuns.length" class="route-badge-shell" aria-live="polite">
+  <aside v-if="relatedRuns.length || loading || !!loadError" class="route-badge-shell" aria-live="polite">
     <div class="route-badge-head">
       <p class="route-badge-title">Route Runs</p>
       <span class="route-badge-count">{{ relatedRuns.length }}</span>
     </div>
     <p class="route-badge-path">{{ normalizedCurrentRoute }}</p>
+    <p v-if="loadError" class="route-badge-error" role="alert">{{ loadError }}</p>
 
-    <ul class="route-badge-links">
+    <p v-if="loading && !relatedRuns.length" class="route-badge-empty">Loading route runs...</p>
+    <ul v-else-if="relatedRuns.length" class="route-badge-links">
       <li v-for="run in relatedRuns.slice(0, 4)" :key="run.id">
         <RouterLink :to="`/codex/runs/${run.id}`">
           {{ run.title }}
@@ -14,8 +16,13 @@
         <span :class="statusChipClass(run.status)">{{ run.status }}</span>
       </li>
     </ul>
+    <p v-else class="route-badge-empty">No runs linked to this route yet.</p>
 
-    <RouterLink class="route-badge-more" :to="`/codex?route=${encodeURIComponent(normalizedCurrentRoute)}`">
+    <RouterLink
+      v-if="relatedRuns.length"
+      class="route-badge-more"
+      :to="`/codex?route=${encodeURIComponent(normalizedCurrentRoute)}`"
+    >
       Open related runs in inbox
     </RouterLink>
   </aside>
@@ -37,24 +44,35 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 const route = useRoute();
 const runs = ref<RunItem[]>([]);
+const loading = ref(false);
+const loadError = ref("");
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 
 const normalizedCurrentRoute = computed(() => normalizeRoutePath(route.fullPath || route.path));
 const relatedRuns = computed(() => filterRunsByRoute(runs.value, normalizedCurrentRoute.value));
 
 async function refreshRuns() {
+  loading.value = true;
+  loadError.value = "";
+
   const params = new URLSearchParams({
     limit: "200",
     offset: "0",
   });
 
-  const response = await fetch(`${apiBaseUrl}/api/runs?${params.toString()}`);
-  if (!response.ok) {
-    return;
-  }
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/runs?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error(`Runs fetch failed (${response.status})`);
+    }
 
-  const payload = (await response.json()) as RunListResponse;
-  runs.value = payload.items;
+    const payload = (await response.json()) as RunListResponse;
+    runs.value = payload.items;
+  } catch (error) {
+    loadError.value = (error as Error).message;
+  } finally {
+    loading.value = false;
+  }
 }
 
 watch(
@@ -122,6 +140,18 @@ onUnmounted(() => {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.82rem;
   color: #cbd5e1;
+}
+
+.route-badge-error {
+  margin: 0;
+  color: #fca5a5;
+  font-size: 0.8rem;
+}
+
+.route-badge-empty {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.82rem;
 }
 
 .route-badge-links {

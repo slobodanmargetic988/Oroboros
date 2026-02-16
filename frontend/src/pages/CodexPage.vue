@@ -1,5 +1,5 @@
 <template>
-  <div class="codex-page">
+  <div class="codex-page" role="main">
     <header class="hero">
       <p class="eyebrow">Ouroboros</p>
       <h1>Codex Runs Inbox</h1>
@@ -35,11 +35,12 @@
           <span class="hint">POST /api/runs</span>
         </div>
 
-        <p v-if="submitError" class="error">{{ submitError }}</p>
+        <p v-if="submitError" class="error" role="alert">{{ submitError }}</p>
+        <p v-if="submitSuccess" class="success" role="status">{{ submitSuccess }}</p>
       </form>
     </section>
 
-    <section class="panel">
+    <section class="panel" :aria-busy="runsLoading ? 'true' : 'false'">
       <div class="panel-head">
         <h2>Runs Inbox</h2>
         <div class="panel-controls">
@@ -50,7 +51,7 @@
               <option v-for="status in commonStatuses" :key="status" :value="status">{{ status }}</option>
             </select>
           </label>
-          <button @click="refreshRuns">Refresh</button>
+          <button type="button" aria-keyshortcuts="Alt+R" @click="refreshRuns">Refresh</button>
         </div>
       </div>
 
@@ -61,11 +62,16 @@
             v-model="routeFilter"
             type="text"
             placeholder="/codex"
+            @keyup.enter="applyCurrentRouteFilter"
           />
         </label>
-        <button @click="applyCurrentRouteFilter">Use Current Route</button>
-        <button @click="clearRouteFilter">Clear Route Filter</button>
+        <button type="button" @click="applyCurrentRouteFilter">Use Current Route</button>
+        <button type="button" @click="clearRouteFilter">Clear Route Filter</button>
       </div>
+
+      <p v-if="runsError" class="error panel-inline-error" role="alert">
+        {{ runsError }}
+      </p>
 
       <div class="meta-row">
         <span>Total: {{ total }}</span>
@@ -80,7 +86,7 @@
       <div class="slots-panel">
         <div class="slots-head">
           <p>Preview Slot Occupancy</p>
-          <button @click="refreshSlotsOnly">Refresh Slots</button>
+          <button type="button" @click="refreshSlotsOnly">Refresh Slots</button>
         </div>
         <p v-if="slotsError" class="error">{{ slotsError }}</p>
         <ul v-if="slots.length" class="slots-grid">
@@ -108,6 +114,7 @@
             </p>
           </li>
         </ul>
+        <p v-else class="empty subtle">No slot records available.</p>
       </div>
 
       <div v-if="currentRouteRuns.length" class="related-panel">
@@ -121,8 +128,10 @@
           </li>
         </ul>
       </div>
+      <p v-else-if="!runsLoading && !runsError" class="empty subtle">No route-related runs for this page right now.</p>
 
-      <ul v-if="visibleRuns.length" class="runs-list">
+      <p v-if="runsLoading && !visibleRuns.length && !runsError" class="empty">Loading runs...</p>
+      <ul v-else-if="visibleRuns.length" class="runs-list">
         <li v-for="run in visibleRuns" :key="run.id" class="run-item">
           <div class="run-top">
             <strong>{{ run.title }}</strong>
@@ -153,11 +162,11 @@
           </div>
         </li>
       </ul>
-      <p v-else class="empty">No runs found for current filter settings.</p>
+      <p v-else class="empty">{{ visibleEmptyLabel }}</p>
 
       <div class="pager">
-        <button :disabled="offset === 0" @click="prevPage">Previous</button>
-        <button :disabled="offset + limit >= total" @click="nextPage">Next</button>
+        <button type="button" :disabled="offset === 0 || runsLoading" @click="prevPage">Previous</button>
+        <button type="button" :disabled="offset + limit >= total || runsLoading" @click="nextPage">Next</button>
       </div>
     </section>
   </div>
@@ -192,8 +201,11 @@ const note = ref("");
 const metadataText = ref('{"source":"codex-page"}');
 const submitting = ref(false);
 const submitError = ref("");
+const submitSuccess = ref("");
 
 const runs = ref<RunItem[]>([]);
+const runsLoading = ref(false);
+const runsError = ref("");
 const total = ref(0);
 const limit = ref(10);
 const offset = ref(0);
@@ -247,6 +259,15 @@ const slotByRunId = computed(() => {
 });
 const occupiedSlotCount = computed(() => slots.value.filter((slot) => isSlotActive(slot)).length);
 const waitingRunsCount = computed(() => Object.keys(waitingReasonsByRunId.value).length);
+const visibleEmptyLabel = computed(() => {
+  if (runsError.value) {
+    return "Unable to load runs. Try refresh.";
+  }
+  if (routeFilter.value.trim() || statusFilter.value) {
+    return "No runs found for current filter settings.";
+  }
+  return "No runs yet. Create a run from the composer above.";
+});
 
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -318,6 +339,7 @@ function formatTime(value: string | null): string {
 
 async function submitPrompt() {
   submitError.value = "";
+  submitSuccess.value = "";
   submitting.value = true;
 
   try {
@@ -344,6 +366,7 @@ async function submitPrompt() {
 
     prompt.value = "";
     note.value = "";
+    submitSuccess.value = "Run submitted and inbox refreshed.";
     await refreshRuns();
   } catch (error) {
     submitError.value = (error as Error).message;
@@ -392,6 +415,9 @@ async function fetchWaitingReasons(runItems: RunItem[]): Promise<void> {
 }
 
 async function refreshRuns() {
+  runsLoading.value = true;
+  runsError.value = "";
+
   const params = new URLSearchParams({
     limit: String(limit.value),
     offset: String(offset.value),
@@ -405,26 +431,32 @@ async function refreshRuns() {
     params.append("route", normalizeRoutePath(filterRoute));
   }
 
-  const response = await fetch(`${apiBaseUrl}/api/runs?${params.toString()}`);
-  if (!response.ok) {
-    throw new Error(`Run list fetch failed (${response.status})`);
-  }
-
-  const payload = (await response.json()) as RunListResponse;
-  runs.value = payload.items;
-  total.value = payload.total;
-  limit.value = payload.limit;
-  offset.value = payload.offset;
-
   try {
-    await fetchSlotStates();
-    slotsError.value = "";
-  } catch (error) {
-    slotsError.value = (error as Error).message;
-  }
+    const response = await fetch(`${apiBaseUrl}/api/runs?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error(`Run list fetch failed (${response.status})`);
+    }
 
-  await fetchWaitingReasons(payload.items);
-  lastSync.value = new Date();
+    const payload = (await response.json()) as RunListResponse;
+    runs.value = payload.items;
+    total.value = payload.total;
+    limit.value = payload.limit;
+    offset.value = payload.offset;
+
+    try {
+      await fetchSlotStates();
+      slotsError.value = "";
+    } catch (error) {
+      slotsError.value = (error as Error).message;
+    }
+
+    await fetchWaitingReasons(payload.items);
+    lastSync.value = new Date();
+  } catch (error) {
+    runsError.value = (error as Error).message;
+  } finally {
+    runsLoading.value = false;
+  }
 }
 
 async function refreshSlotsOnly() {
@@ -478,12 +510,45 @@ async function prevPage() {
   await refreshRuns();
 }
 
+function isTypingTarget(event: KeyboardEvent): boolean {
+  const target = event.target as HTMLElement | null;
+  if (!target) {
+    return false;
+  }
+  const tagName = target.tagName.toLowerCase();
+  return tagName === "input" || tagName === "textarea" || target.isContentEditable;
+}
+
+async function handleInboxHotkeys(event: KeyboardEvent) {
+  if (isTypingTarget(event)) {
+    return;
+  }
+
+  if (event.altKey && event.key.toLowerCase() === "r") {
+    event.preventDefault();
+    await refreshRuns();
+    return;
+  }
+
+  if (event.altKey && event.key === "ArrowRight") {
+    event.preventDefault();
+    await nextPage();
+    return;
+  }
+
+  if (event.altKey && event.key === "ArrowLeft") {
+    event.preventDefault();
+    await prevPage();
+  }
+}
+
 onMounted(async () => {
   syncRouteFilterFromQuery();
   await refreshRuns();
   pollHandle = setInterval(() => {
     void refreshRuns();
   }, 5000);
+  window.addEventListener("keydown", handleInboxHotkeys);
 });
 
 watch(
@@ -499,6 +564,7 @@ onUnmounted(() => {
   if (pollHandle) {
     clearInterval(pollHandle);
   }
+  window.removeEventListener("keydown", handleInboxHotkeys);
 });
 </script>
 
@@ -608,6 +674,15 @@ button:disabled {
 .error {
   margin: 0;
   color: #b91c1c;
+}
+
+.success {
+  margin: 0;
+  color: #166534;
+}
+
+.panel-inline-error {
+  margin-bottom: 0.8rem;
 }
 
 .panel-head {
@@ -852,6 +927,11 @@ button:disabled {
   color: #64748b;
 }
 
+.subtle {
+  margin-top: 0.55rem;
+  font-size: 0.82rem;
+}
+
 .pager {
   margin-top: 0.8rem;
   display: flex;
@@ -871,6 +951,27 @@ button:disabled {
 
   .route-filter-row {
     align-items: stretch;
+  }
+
+  .run-top {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .run-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 640px) {
+  .slots-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pager {
+    flex-wrap: wrap;
   }
 }
 </style>
