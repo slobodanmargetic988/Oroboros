@@ -11,27 +11,16 @@
 ## 1) Shared Environment
 ```bash
 cp .env.example .env
+cp backend/.env.example backend/.env
+cp worker/.env.example worker/.env
 ```
 
-## 2) Prepare Python virtualenvs
-
-### Backend venv
+## 2) Bootstrap backend DB (schema + seed)
 ```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-deactivate
+./scripts/db-bootstrap.sh
 ```
 
-### Worker venv
-```bash
-cd worker
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-deactivate
-```
+Details: `docs/db-bootstrap-and-migrations.md`
 
 ## 3) Install and start runtime services (systemd)
 ```bash
@@ -57,7 +46,9 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ### Worker
 ```bash
 cd worker
+python3 -m venv .venv
 source .venv/bin/activate
+pip install -e .
 python -m worker.main
 ```
 
