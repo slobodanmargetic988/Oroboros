@@ -390,6 +390,7 @@ def transition_run(
 
 @router.post("/{run_id}/cancel", response_model=RunResponse)
 def cancel_run(run_id: str, db: Session = Depends(get_db_session)) -> RunResponse:
+    trace_id = current_trace_id()
     run = _get_run_or_404(db, run_id)
     status_from, status_to = _transition_or_409(run, target_state=RunState.CANCELED)
 
@@ -426,6 +427,7 @@ def cancel_run(run_id: str, db: Session = Depends(get_db_session)) -> RunRespons
             "source": "cancel_endpoint",
             "resource_cleanup": cleanup_result,
             "lease_release": lease_release_result,
+            "trace_id": trace_id,
         },
         actor_id=run.created_by,
         audit_action="run.cancel.requested",
@@ -434,6 +436,16 @@ def cancel_run(run_id: str, db: Session = Depends(get_db_session)) -> RunRespons
     db.commit()
     db.refresh(run)
     run_context = db.query(RunContext).filter(RunContext.run_id == run.id).first()
+    emit_structured_log(
+        component="api.runs",
+        event="run_canceled",
+        trace_id=trace_id,
+        run_id=run.id,
+        slot_id=run.slot_id,
+        commit_sha=run.commit_sha,
+        status_from=status_from,
+        status_to=status_to,
+    )
     return _to_run_response(run, run_context)
 
 
@@ -467,6 +479,7 @@ def retry_run(run_id: str, db: Session = Depends(get_db_session)) -> RunResponse
 
 @router.post("/{run_id}/resume", response_model=RunResponse)
 def resume_run(run_id: str, db: Session = Depends(get_db_session)) -> RunResponse:
+    trace_id = current_trace_id()
     parent_run = _get_run_or_404(db, run_id)
     if parent_run.status not in {RunState.FAILED.value, RunState.EXPIRED.value}:
         raise HTTPException(status_code=409, detail="resume_requires_failed_or_expired_run")
@@ -486,11 +499,22 @@ def resume_run(run_id: str, db: Session = Depends(get_db_session)) -> RunRespons
             "parent_run_id": parent_run.id,
             "recovery_reason_code": failure_reason_code,
             "recovery_strategy": "create_child_run",
+            "trace_id": trace_id,
         },
         audit_action="run.timeout.resumed",
+        trace_id=trace_id,
     )
 
     db.commit()
     db.refresh(child_run)
     db.refresh(child_context)
+    emit_structured_log(
+        component="api.runs",
+        event="run_resumed",
+        trace_id=trace_id,
+        run_id=child_run.id,
+        slot_id=child_run.slot_id,
+        commit_sha=child_run.commit_sha,
+        parent_run_id=parent_run.id,
+    )
     return _to_run_response(child_run, child_context)

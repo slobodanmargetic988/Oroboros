@@ -74,7 +74,9 @@ interface RunNotificationItem {
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 const USER_ID_STORAGE_KEY = "codex.user_id";
 const NOTIFICATION_STORAGE_PREFIX = "codex.run_notifications.v1";
-const WATCHED_STATUSES = new Set(["preview_ready", "failed", "merged", "canceled"]);
+const WATCHED_STATUSES = new Set(["preview_ready", "failed", "merged", "canceled", "expired"]);
+const RUNS_PAGE_LIMIT = 200;
+const MAX_RUNS_SCAN = 5000;
 
 const notifications = ref<RunNotificationItem[]>([]);
 const toasts = ref<RunNotificationItem[]>([]);
@@ -86,6 +88,7 @@ const previousRunStatusById = ref<Record<string, string>>({});
 
 let initialized = false;
 let pollHandle: ReturnType<typeof setInterval> | null = null;
+let refreshInFlight = false;
 const toastTimeoutById = new Map<string, number>();
 
 const unseenCount = computed(() => notifications.value.filter((item) => !item.seen).length);
@@ -244,26 +247,43 @@ function formatDate(value: string): string {
 }
 
 async function refreshRunsForNotifications(): Promise<void> {
+  if (refreshInFlight) {
+    return;
+  }
+  refreshInFlight = true;
   if (!initialized) {
     loading.value = true;
   }
   loadError.value = "";
 
-  const params = new URLSearchParams({
-    limit: "200",
-    offset: "0",
-  });
-
   try {
-    const response = await fetch(`${apiBaseUrl}/api/runs?${params.toString()}`);
-    if (!response.ok) {
-      throw new Error(`Run notifications fetch failed (${response.status})`);
+    const allRuns: RunItem[] = [];
+    let offset = 0;
+    let total = 0;
+
+    while (offset < MAX_RUNS_SCAN) {
+      const params = new URLSearchParams({
+        limit: String(RUNS_PAGE_LIMIT),
+        offset: String(offset),
+      });
+      const response = await fetch(`${apiBaseUrl}/api/runs?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(`Run notifications fetch failed (${response.status})`);
+      }
+
+      const payload = (await response.json()) as RunListResponse;
+      total = payload.total;
+      allRuns.push(...payload.items);
+
+      if (!payload.items.length || offset + payload.items.length >= total) {
+        break;
+      }
+      offset += payload.items.length;
     }
 
-    const payload = (await response.json()) as RunListResponse;
     const nextStatusMap: Record<string, string> = {};
 
-    payload.items.forEach((run) => {
+    allRuns.forEach((run) => {
       const currentStatus = run.status.toLowerCase();
       const previousStatus = previousRunStatusById.value[run.id]?.toLowerCase();
 
@@ -285,11 +305,15 @@ async function refreshRunsForNotifications(): Promise<void> {
     });
 
     previousRunStatusById.value = nextStatusMap;
+    if (total > MAX_RUNS_SCAN) {
+      loadError.value = `Notifications truncated to newest ${MAX_RUNS_SCAN} runs.`;
+    }
     initialized = true;
   } catch (error) {
     loadError.value = (error as Error).message;
   } finally {
     loading.value = false;
+    refreshInFlight = false;
   }
 }
 

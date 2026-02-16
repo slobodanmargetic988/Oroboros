@@ -33,6 +33,7 @@ from app.domain.run_state_machine import (  # noqa: E402
 )
 from app.models import Run, RunArtifact, RunContext, RunEvent, ValidationCheck  # noqa: E402
 from app.services.git_worktree_manager import assign_worktree  # noqa: E402
+from app.services.run_event_log import append_run_event  # noqa: E402
 from app.services.slot_lease_manager import (  # noqa: E402
     acquire_slot_lease,
     heartbeat_slot_lease,
@@ -197,18 +198,21 @@ class WorkerOrchestrator:
                 )
                 db.add(run_context)
             elif isinstance(run_context.metadata_json, dict):
-                run_context.metadata_json.setdefault("trace_id", trace_id)
+                metadata_json = dict(run_context.metadata_json)
+                metadata_json.setdefault("trace_id", trace_id)
+                run_context.metadata_json = metadata_json
             else:
                 run_context.metadata_json = {"trace_id": trace_id}
 
-            db.add(
-                RunEvent(
-                    run_id=run.id,
-                    event_type="status_transition",
-                    status_from=status_from,
-                    status_to=status_to,
-                    payload={"source": "worker", "phase": "claim", "trace_id": trace_id},
-                )
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="status_transition",
+                status_from=status_from,
+                status_to=status_to,
+                payload={"source": "worker", "phase": "claim", "trace_id": trace_id},
+                actor_id=run.created_by,
+                audit_action="run.plan.claimed",
             )
 
             # SessionLocal uses autoflush=False; flush lease + status writes so
@@ -304,16 +308,17 @@ class WorkerOrchestrator:
             commit_sha = self._resolve_worktree_commit_sha(claimed.worktree_path)
             if commit_sha:
                 run.commit_sha = commit_sha
-                db.add(
-                    RunEvent(
-                        run_id=run.id,
-                        event_type="run_commit_resolved",
-                        payload={
-                            "source": "worker",
-                            "commit_sha": commit_sha,
-                            "trace_id": claimed.trace_id,
-                        },
-                    )
+                append_run_event(
+                    db,
+                    run_id=run.id,
+                    event_type="run_commit_resolved",
+                    payload={
+                        "source": "worker",
+                        "commit_sha": commit_sha,
+                        "trace_id": claimed.trace_id,
+                    },
+                    actor_id=run.created_by,
+                    audit_action="run.edit.commit_resolved",
                 )
                 emit_worker_log(
                     event="run_commit_resolved",
@@ -381,18 +386,19 @@ class WorkerOrchestrator:
                 return
 
             status_from, status_to = transition_run_status(run, target=RunState.TESTING)
-            db.add(
-                RunEvent(
-                    run_id=run.id,
-                    event_type="status_transition",
-                    status_from=status_from,
-                    status_to=status_to,
-                    payload={
-                        "source": "worker",
-                        "check": "codex_cli_execution",
-                        "trace_id": claimed.trace_id,
-                    },
-                )
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="status_transition",
+                status_from=status_from,
+                status_to=status_to,
+                payload={
+                    "source": "worker",
+                    "check": "codex_cli_execution",
+                    "trace_id": claimed.trace_id,
+                },
+                actor_id=run.created_by,
+                audit_action="run.test.started",
             )
             # Release the row lock acquired by claim before long-running validation checks.
             db.commit()
@@ -455,33 +461,36 @@ class WorkerOrchestrator:
                 db.rollback()
                 return False
             if run.status == RunState.CANCELED.value:
-                db.add(
-                    RunEvent(
-                        run_id=run.id,
-                        event_type="worker_skipped_canceled_before_execution",
-                        payload={"source": "worker", "slot_id": slot_id, "trace_id": trace_id},
-                    )
+                append_run_event(
+                    db,
+                    run_id=run.id,
+                    event_type="worker_skipped_canceled_before_execution",
+                    payload={"source": "worker", "slot_id": slot_id, "trace_id": trace_id},
+                    actor_id=run.created_by,
+                    audit_action="run.edit.skipped_canceled",
                 )
                 release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
                 db.commit()
                 return False
 
             status_from, status_to = transition_run_status(run, target=RunState.EDITING)
-            db.add(
-                RunEvent(
-                    run_id=run.id,
-                    event_type="status_transition",
-                    status_from=status_from,
-                    status_to=status_to,
-                    payload={"source": "worker", "slot_id": slot_id, "trace_id": trace_id},
-                )
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="status_transition",
+                status_from=status_from,
+                status_to=status_to,
+                payload={"source": "worker", "slot_id": slot_id, "trace_id": trace_id},
+                actor_id=run.created_by,
+                audit_action="run.edit.started",
             )
-            db.add(
-                RunEvent(
-                    run_id=run.id,
-                    event_type="codex_command_started",
-                    payload={"source": "worker", "slot_id": slot_id, "trace_id": trace_id},
-                )
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="codex_command_started",
+                payload={"source": "worker", "slot_id": slot_id, "trace_id": trace_id},
+                actor_id=run.created_by,
+                audit_action="run.edit.command_started",
             )
             db.commit()
             emit_worker_log(
@@ -522,23 +531,24 @@ class WorkerOrchestrator:
                 },
             )
         )
-        db.add(
-            RunEvent(
-                run_id=run.id,
-                event_type="codex_command_finished",
-                payload={
-                    "source": "worker",
-                    "command": command,
-                    "artifact_uri": artifact_uri,
-                    "exit_code": result.exit_code,
-                    "timed_out": result.timed_out,
-                    "canceled": result.canceled,
-                    "lease_expired": result.lease_expired,
-                    "duration_seconds": result.duration_seconds,
-                    "output_excerpt": result.output_excerpt,
-                    "trace_id": trace_id,
-                },
-            )
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="codex_command_finished",
+            payload={
+                "source": "worker",
+                "command": command,
+                "artifact_uri": artifact_uri,
+                "exit_code": result.exit_code,
+                "timed_out": result.timed_out,
+                "canceled": result.canceled,
+                "lease_expired": result.lease_expired,
+                "duration_seconds": result.duration_seconds,
+                "output_excerpt": result.output_excerpt,
+                "trace_id": trace_id,
+            },
+            actor_id=run.created_by,
+            audit_action="run.edit.completed",
         )
         db.add(
             ValidationCheck(
@@ -578,17 +588,18 @@ class WorkerOrchestrator:
             check_started_at = utcnow()
             output_path = self.artifact_root / run.id / "checks" / f"{check.name}.log"
 
-            db.add(
-                RunEvent(
-                    run_id=run.id,
-                    event_type="validation_check_started",
-                    payload={
-                        "source": "worker",
-                        "check_name": check.name,
-                        "command": check.command,
-                        "trace_id": trace_id,
-                    },
-                )
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="validation_check_started",
+                payload={
+                    "source": "worker",
+                    "check_name": check.name,
+                    "command": check.command,
+                    "trace_id": trace_id,
+                },
+                actor_id=run.created_by,
+                audit_action="run.test.check_started",
             )
 
             result = run_codex_command(
@@ -652,24 +663,25 @@ class WorkerOrchestrator:
                     },
                 )
             )
-            db.add(
-                RunEvent(
-                    run_id=run.id,
-                    event_type="validation_check_finished",
-                    payload={
-                        "source": "worker",
-                        "check_name": check.name,
-                        "status": check_status,
-                        "artifact_uri": artifact_uri,
-                        "exit_code": result.exit_code,
-                        "timed_out": result.timed_out,
-                        "canceled": result.canceled,
-                        "lease_expired": result.lease_expired,
-                        "duration_seconds": result.duration_seconds,
-                        "output_excerpt": result.output_excerpt,
-                        "trace_id": trace_id,
-                    },
-                )
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="validation_check_finished",
+                payload={
+                    "source": "worker",
+                    "check_name": check.name,
+                    "status": check_status,
+                    "artifact_uri": artifact_uri,
+                    "exit_code": result.exit_code,
+                    "timed_out": result.timed_out,
+                    "canceled": result.canceled,
+                    "lease_expired": result.lease_expired,
+                    "duration_seconds": result.duration_seconds,
+                    "output_excerpt": result.output_excerpt,
+                    "trace_id": trace_id,
+                },
+                actor_id=run.created_by,
+                audit_action="run.test.check_completed",
             )
             emit_worker_log(
                 event="validation_check_finished",
@@ -697,20 +709,21 @@ class WorkerOrchestrator:
 
     def _finalize_success_run(self, *, db, run: Run, result, trace_id: str | None) -> None:
         status_from, status_to = transition_run_status(run, target=RunState.PREVIEW_READY)
-        db.add(
-            RunEvent(
-                run_id=run.id,
-                event_type="status_transition",
-                status_from=status_from,
-                status_to=status_to,
-                payload={
-                    "source": "worker",
-                    "result": "ready_for_preview",
-                    "exit_code": result.exit_code,
-                    "required_checks": [check.name for check in self.required_checks],
-                    "trace_id": trace_id,
-                },
-            )
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="status_transition",
+            status_from=status_from,
+            status_to=status_to,
+            payload={
+                "source": "worker",
+                "result": "ready_for_preview",
+                "exit_code": result.exit_code,
+                "required_checks": [check.name for check in self.required_checks],
+                "trace_id": trace_id,
+            },
+            actor_id=run.created_by,
+            audit_action="run.test.completed",
         )
         emit_worker_log(
             event="run_preview_ready",
