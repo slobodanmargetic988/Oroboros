@@ -20,12 +20,52 @@ Host-only deployment only. No Docker/Compose/Kubernetes usage.
 EOF
 }
 
+TRACE_ID="${TRACE_ID:-${OUROBOROS_TRACE_ID:-}}"
+RUN_ID="${RUN_ID:-${OUROBOROS_RUN_ID:-}}"
+SLOT_ID="${SLOT_ID:-${OUROBOROS_SLOT_ID:-}}"
+
+structured_log() {
+  local event="$1"
+  local message="${2:-}"
+  if ! command -v python3 >/dev/null 2>&1; then
+    return
+  fi
+  python3 - "$event" "$message" "${TRACE_ID:-}" "${RUN_ID:-}" "${SLOT_ID:-}" "${COMMIT_SHA:-${OUROBOROS_COMMIT_SHA:-}}" <<'PY'
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import json
+import sys
+
+event = sys.argv[1]
+message = sys.argv[2]
+trace_id = sys.argv[3] or None
+run_id = sys.argv[4] or None
+slot_id = sys.argv[5] or None
+commit_sha = sys.argv[6] or None
+
+payload = {
+    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+    "component": "deploy",
+    "event": event,
+    "message": message,
+    "trace_id": trace_id,
+    "run_id": run_id,
+    "slot_id": slot_id,
+    "commit_sha": commit_sha,
+}
+print(json.dumps(payload, sort_keys=True))
+PY
+}
+
 log() {
   echo "[deploy] $*"
+  structured_log "deploy_log" "$*"
 }
 
 die() {
   echo "[deploy] ERROR: $*" >&2
+  structured_log "deploy_error" "$*"
   exit 1
 }
 
@@ -45,6 +85,9 @@ if [[ $# -ne 1 ]]; then
 fi
 
 COMMIT_SHA="$1"
+if [[ -n "${COMMIT_SHA:-}" ]]; then
+  export COMMIT_SHA
+fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR_DEFAULT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="${REPO_ROOT:-${ROOT_DIR_DEFAULT}}"
@@ -200,6 +243,7 @@ EOF
 
 require_cmd git
 git -C "${REPO_ROOT}" cat-file -e "${COMMIT_SHA}^{commit}" || die "Commit not found: ${COMMIT_SHA}"
+structured_log "deploy_started" "Starting deployment pipeline"
 
 mkdir -p "${DEPLOY_RELEASES_DIR}"
 
@@ -238,3 +282,4 @@ fi
 
 log "Deployment succeeded"
 log "Current release: ${RELEASE_DIR}"
+structured_log "deploy_succeeded" "Deployment pipeline completed"

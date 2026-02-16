@@ -4,6 +4,7 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 
+from .observability import emit_worker_log
 from .orchestrator import WorkerOrchestrator
 
 
@@ -28,7 +29,7 @@ class HealthHandler(BaseHTTPRequestHandler):
 def configure_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s %(levelname)s [worker] %(message)s",
+        format="%(message)s",
     )
 
 
@@ -36,7 +37,7 @@ def start_health_server() -> None:
     host = os.getenv("WORKER_HEALTH_HOST", "0.0.0.0")
     port = int(os.getenv("WORKER_HEALTH_PORT", "8090"))
     server = HTTPServer((host, port), HealthHandler)
-    logging.info("Worker health endpoint available at http://%s:%s/health", host, port)
+    emit_worker_log(event="health_server_started", host=host, port=port)
     server.serve_forever()
 
 
@@ -48,18 +49,18 @@ def main() -> None:
     health_thread = Thread(target=start_health_server, daemon=True)
     health_thread.start()
 
-    logging.info("Ouroboros worker started")
-    logging.info("Polling interval: %s seconds", poll_interval)
+    emit_worker_log(event="worker_started", poll_interval_seconds=poll_interval)
 
     while True:
         try:
             processed = orchestrator.process_next_run()
             if processed:
-                logging.info("Processed one queued run")
+                emit_worker_log(event="worker_cycle_processed_run")
             else:
-                logging.info("worker heartbeat")
+                emit_worker_log(event="worker_heartbeat")
         except Exception:
-            logging.exception("Worker cycle failed")
+            emit_worker_log(event="worker_cycle_failed", level=logging.ERROR)
+            logging.exception("worker_cycle_failed")
         time.sleep(poll_interval)
 
 
