@@ -1,0 +1,12 @@
+[Unit]
+Description=Run preview DB reset integrity audit hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=300
+AccuracySec=1min
+Unit=ouroboros-maintenance-preview-reset-audit.service
+
+[Install]
+WantedBy=timers.target

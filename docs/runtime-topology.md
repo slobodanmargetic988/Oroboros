@@ -91,6 +91,18 @@ Use `scripts/runtime-health-check.sh` for one-command verification.
 - Health gate: `scripts/runtime-health-check.sh` (restore previous target on failure)
 - Release registry updates recorded in control-plane DB (`releases` table)
 
+## Scheduled Maintenance Jobs (MYO-41)
+Scheduled as host-native `systemd` timers (no container scheduler dependency):
+
+| Job | Timer | Service | Frequency | Command |
+|---|---|---|---|---|
+| Stale lease cleanup | `ouroboros-maintenance-stale-leases.timer` | `ouroboros-maintenance-stale-leases.service` | every 15 minutes | `scripts/maintenance-stale-lease-cleanup.sh` |
+| Preview DB reset integrity audit | `ouroboros-maintenance-preview-reset-audit.timer` | `ouroboros-maintenance-preview-reset-audit.service` | hourly | `scripts/maintenance-preview-reset-integrity.sh --lookback-hours 24 --running-grace-minutes 90` |
+| Daily deployment + service health summary | `ouroboros-maintenance-daily-health-summary.timer` | `ouroboros-maintenance-daily-health-summary.service` | daily at 03:30 (with randomized delay) | `scripts/maintenance-daily-health-summary.sh --output-dir /srv/oroboros/artifacts/maintenance` |
+
+Daily health summaries are written to:
+- `/srv/oroboros/artifacts/maintenance/daily-health-summary-YYYYMMDD.json`
+
 ## Preview Smoke/E2E Harness (MYO-32)
 - Command: `./scripts/preview-smoke-e2e.sh --preview-url <preview_url>`
 - Changed routes: add repeated `--changed-route /path`

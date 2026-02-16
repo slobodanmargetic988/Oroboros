@@ -1,0 +1,25 @@
+[Unit]
+Description=Ouroboros maintenance: stale slot lease cleanup
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=oroboros-worker
+Group=oroboros-worker
+WorkingDirectory=/srv/oroboros/current
+Environment=DEPLOY_ROOT=/srv/oroboros
+EnvironmentFile=/etc/oroboros/api.env
+ExecStart=/srv/oroboros/current/scripts/maintenance-stale-lease-cleanup.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/srv/oroboros/artifacts /tmp
+UMask=0077
