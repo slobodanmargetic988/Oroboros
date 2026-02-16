@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 import time
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -29,6 +29,9 @@ class RunEventResponse(BaseModel):
 
 
 def _to_response(event: RunEvent) -> RunEventResponse:
+    payload = dict(event.payload) if isinstance(event.payload, dict) else event.payload
+    if isinstance(payload, dict):
+        payload.setdefault("schema_version", event_schema_version(payload))
     return RunEventResponse(
         schema_version=event_schema_version(event.payload),
         id=event.id,
@@ -36,7 +39,7 @@ def _to_response(event: RunEvent) -> RunEventResponse:
         event_type=event.event_type,
         status_from=event.status_from,
         status_to=event.status_to,
-        payload=event.payload,
+        payload=payload,
         created_at=event.created_at,
     )
 
@@ -47,10 +50,13 @@ def _fetch_events(
     run_id: str,
     limit: int,
     since_id: int | None = None,
+    order: Literal["asc", "desc"] = "asc",
 ) -> list[RunEvent]:
     query = db.query(RunEvent).filter(RunEvent.run_id == run_id)
     if since_id is not None:
         query = query.filter(RunEvent.id > since_id)
+    if order == "desc":
+        return query.order_by(RunEvent.created_at.desc(), RunEvent.id.desc()).limit(limit).all()
     return query.order_by(RunEvent.created_at.asc(), RunEvent.id.asc()).limit(limit).all()
 
 
@@ -81,9 +87,10 @@ def get_events_schema() -> dict[str, Any]:
 def list_run_events(
     run_id: str,
     limit: int = Query(default=200, ge=1, le=500),
+    order: Literal["asc", "desc"] = Query(default="asc"),
     db: Session = Depends(get_db_session),
 ) -> list[RunEventResponse]:
-    events = _fetch_events(db, run_id=run_id, limit=limit)
+    events = _fetch_events(db, run_id=run_id, limit=limit, order=order)
     return [_to_response(event) for event in events]
 
 

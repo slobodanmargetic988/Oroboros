@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import literal, or_
 from sqlalchemy.orm import Session
@@ -19,6 +19,7 @@ from app.domain.run_state_machine import (
 )
 from app.models import Run, RunContext, RunEvent
 from app.services.git_worktree_manager import cleanup_worktree
+from app.services.observability import current_trace_id, emit_structured_log, ensure_trace_id
 from app.services.run_event_log import append_run_event
 from app.services.slot_lease_manager import release_slot_lease
 
@@ -174,6 +175,7 @@ def _create_child_run_from_parent(
     event_type: str,
     event_payload: dict[str, Any],
     audit_action: str,
+    trace_id: str | None = None,
 ) -> tuple[Run, RunContext]:
     parent_context = db.query(RunContext).filter(RunContext.run_id == parent_run.id).first()
 
@@ -188,13 +190,23 @@ def _create_child_run_from_parent(
     db.add(child_run)
     db.flush()
 
+    inherited_context_metadata = (
+        dict(parent_context.metadata_json)
+        if parent_context is not None and isinstance(parent_context.metadata_json, dict)
+        else None
+    )
+    if trace_id:
+        if inherited_context_metadata is None:
+            inherited_context_metadata = {}
+        inherited_context_metadata.setdefault("trace_id", trace_id)
+
     child_context = RunContext(
         run_id=child_run.id,
         route=parent_context.route if parent_context else parent_run.route,
         page_title=parent_context.page_title if parent_context else None,
         element_hint=parent_context.element_hint if parent_context else None,
         note=parent_context.note if parent_context else None,
-        metadata_json=parent_context.metadata_json if parent_context else None,
+        metadata_json=inherited_context_metadata,
     )
     db.add(child_context)
 
@@ -220,7 +232,15 @@ def run_contract() -> dict[str, Any]:
 
 
 @router.post("", response_model=RunResponse)
-def create_run(payload: CreateRunRequest, db: Session = Depends(get_db_session)) -> RunResponse:
+def create_run(
+    payload: CreateRunRequest,
+    request: Request,
+    db: Session = Depends(get_db_session),
+) -> RunResponse:
+    trace_id = ensure_trace_id(request.headers.get("x-trace-id") or current_trace_id())
+    metadata = dict(payload.metadata or {})
+    metadata.setdefault("trace_id", trace_id)
+
     run = Run(
         title=payload.title,
         prompt=payload.prompt,
@@ -237,7 +257,7 @@ def create_run(payload: CreateRunRequest, db: Session = Depends(get_db_session))
         page_title=payload.page_title,
         element_hint=payload.element_hint,
         note=payload.note,
-        metadata_json=payload.metadata,
+        metadata_json=metadata,
     )
     db.add(run_context)
 
@@ -251,8 +271,9 @@ def create_run(payload: CreateRunRequest, db: Session = Depends(get_db_session))
             "context": {
                 "route": payload.route,
                 "note": payload.note,
-                "metadata": payload.metadata,
+                "metadata": metadata,
             },
+            "trace_id": trace_id,
         },
         actor_id=payload.created_by,
         audit_action="run.prompt.submitted",
@@ -261,6 +282,15 @@ def create_run(payload: CreateRunRequest, db: Session = Depends(get_db_session))
     db.commit()
     db.refresh(run)
     db.refresh(run_context)
+    emit_structured_log(
+        component="api.runs",
+        event="run_created",
+        trace_id=trace_id,
+        run_id=run.id,
+        slot_id=run.slot_id,
+        commit_sha=run.commit_sha,
+        route=run.route,
+    )
     return _to_run_response(run, run_context)
 
 
@@ -319,6 +349,7 @@ def transition_run(
     payload: TransitionRunRequest,
     db: Session = Depends(get_db_session),
 ) -> RunResponse:
+    trace_id = current_trace_id()
     run = _get_run_or_404(db, run_id)
     status_from, status_to = _transition_or_409(
         run,
@@ -329,6 +360,8 @@ def transition_run(
     event_payload: dict[str, Any] = {}
     if payload.failure_reason_code is not None:
         event_payload["failure_reason_code"] = payload.failure_reason_code.value
+    if trace_id:
+        event_payload["trace_id"] = trace_id
 
     append_run_event(
         db,
@@ -342,6 +375,16 @@ def transition_run(
     db.commit()
     db.refresh(run)
     run_context = db.query(RunContext).filter(RunContext.run_id == run.id).first()
+    emit_structured_log(
+        component="api.runs",
+        event="run_transitioned",
+        trace_id=trace_id,
+        run_id=run.id,
+        slot_id=run.slot_id,
+        commit_sha=run.commit_sha,
+        status_from=status_from,
+        status_to=status_to,
+    )
     return _to_run_response(run, run_context)
 
 
@@ -396,18 +439,29 @@ def cancel_run(run_id: str, db: Session = Depends(get_db_session)) -> RunRespons
 
 @router.post("/{run_id}/retry", response_model=RunResponse)
 def retry_run(run_id: str, db: Session = Depends(get_db_session)) -> RunResponse:
+    trace_id = current_trace_id()
     parent_run = _get_run_or_404(db, run_id)
     child_run, child_context = _create_child_run_from_parent(
         db,
         parent_run=parent_run,
         event_type="run_retried",
-        event_payload={"parent_run_id": parent_run.id},
+        event_payload={"parent_run_id": parent_run.id, "trace_id": trace_id},
         audit_action="run.prompt.retry",
+        trace_id=trace_id,
     )
 
     db.commit()
     db.refresh(child_run)
     db.refresh(child_context)
+    emit_structured_log(
+        component="api.runs",
+        event="run_retried",
+        trace_id=trace_id,
+        run_id=child_run.id,
+        slot_id=child_run.slot_id,
+        commit_sha=child_run.commit_sha,
+        parent_run_id=parent_run.id,
+    )
     return _to_run_response(child_run, child_context)
 
 

@@ -49,6 +49,15 @@ API query surface:
 - `GET /api/releases`
 - `GET /api/releases/{release_id}`
 
+## Observability
+- `deploy.sh` and `rollback.sh` emit JSON structured log lines for correlation across services.
+- Correlation fields: `trace_id`, `run_id`, `slot_id`, `commit_sha`.
+- Scripts consume context from environment when present:
+  - `TRACE_ID` or `OUROBOROS_TRACE_ID`
+  - `RUN_ID` or `OUROBOROS_RUN_ID`
+  - `SLOT_ID` or `OUROBOROS_SLOT_ID`
+  - `COMMIT_SHA` or `OUROBOROS_COMMIT_SHA`
+
 ## Runtime Path Contract
 systemd services execute from `/srv/oroboros/current/*` so symlink switch changes active code without in-place mutations:
 - API: `/srv/oroboros/current/backend`

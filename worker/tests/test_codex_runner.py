@@ -140,6 +140,21 @@ class RunCodexCommandTests(unittest.TestCase):
             self.assertFalse(result.lease_expired)
             self.assertIn("Failed to start command", output_path.read_text(encoding="utf-8"))
 
+    def test_env_overlay_is_passed_to_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = Path(tmp) / "env.log"
+            result = run_codex_command(
+                command=[sys.executable, "-c", "import os; print(os.getenv('TRACE_ID', 'missing'))"],
+                worktree_path=Path(tmp),
+                output_path=output_path,
+                timeout_seconds=5,
+                poll_interval_seconds=0.05,
+                env={"TRACE_ID": "trace-test-123"},
+            )
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn("trace-test-123", output_path.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()
