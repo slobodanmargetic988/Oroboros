@@ -64,14 +64,34 @@ const submitting = ref(false);
 const submitError = ref("");
 const submitSuccess = ref("");
 const promptInputRef = ref<HTMLTextAreaElement | null>(null);
+const overlaySessionId = ref(0);
+const pendingCloseTimeoutId = ref<number | null>(null);
 
-const currentRoutePath = computed(() => route.fullPath || route.path || "/");
+const ROUTE_MAX_LENGTH = 255;
+const currentRoutePath = computed(() => {
+  const fullPath = route.fullPath || route.path || "/";
+  if (fullPath.length <= ROUTE_MAX_LENGTH) {
+    return fullPath;
+  }
+  const fallbackPath = route.path || "/";
+  return fallbackPath.slice(0, ROUTE_MAX_LENGTH);
+});
 
 function closeOverlay() {
+  if (pendingCloseTimeoutId.value !== null) {
+    window.clearTimeout(pendingCloseTimeoutId.value);
+    pendingCloseTimeoutId.value = null;
+  }
+  overlaySessionId.value += 1;
   isOpen.value = false;
 }
 
 async function openOverlay() {
+  if (pendingCloseTimeoutId.value !== null) {
+    window.clearTimeout(pendingCloseTimeoutId.value);
+    pendingCloseTimeoutId.value = null;
+  }
+  overlaySessionId.value += 1;
   isOpen.value = true;
   submitError.value = "";
   submitSuccess.value = "";
@@ -80,6 +100,7 @@ async function openOverlay() {
 }
 
 async function submitRun() {
+  const submitSessionId = overlaySessionId.value;
   submitError.value = "";
   submitSuccess.value = "";
   submitting.value = true;
@@ -107,16 +128,29 @@ async function submitRun() {
       throw new Error(`Run create failed (${response.status})`);
     }
 
+    if (submitSessionId !== overlaySessionId.value || !isOpen.value) {
+      return;
+    }
+
     prompt.value = "";
     note.value = "";
     submitSuccess.value = "Run request created.";
-    setTimeout(() => {
+    pendingCloseTimeoutId.value = window.setTimeout(() => {
+      if (submitSessionId !== overlaySessionId.value) {
+        return;
+      }
+      pendingCloseTimeoutId.value = null;
       closeOverlay();
     }, 350);
   } catch (error) {
+    if (submitSessionId !== overlaySessionId.value) {
+      return;
+    }
     submitError.value = (error as Error).message;
   } finally {
-    submitting.value = false;
+    if (submitSessionId === overlaySessionId.value) {
+      submitting.value = false;
+    }
   }
 }
 
@@ -146,6 +180,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleShortcut);
+  if (pendingCloseTimeoutId.value !== null) {
+    window.clearTimeout(pendingCloseTimeoutId.value);
+    pendingCloseTimeoutId.value = null;
+  }
 });
 </script>
 
