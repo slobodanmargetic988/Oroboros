@@ -15,6 +15,7 @@ This document defines the host-native process topology for:
 - Baseline process manager: **systemd**
 - Unit files: `infra/systemd/*.service`
 - Env files: `infra/systemd/env/*.env` (installed to `/etc/oroboros/`)
+- Runtime code path: `/srv/oroboros/current` (atomic release symlink target)
 
 ## Service Topology
 
@@ -52,7 +53,7 @@ Preview slot-specific provisioning/health contract:
   - `WORKER_POLL_INTERVAL_SECONDS=5`
   - `WORKER_HEALTH_PORT=8090`
 - Web surfaces (`/etc/oroboros/web-*.env`):
-  - `WEB_ROOT=<static_root>`
+  - `WEB_ROOT=/srv/oroboros/current/infra/<web-root>`
   - `WEB_PORT=<3100..3103>`
 
 ## Health Endpoints
@@ -66,6 +67,13 @@ Preview slot-specific provisioning/health contract:
 - `redis`: `redis-cli -h 127.0.0.1 ping`
 
 Use `scripts/runtime-health-check.sh` for one-command verification.
+
+## Scripted Deploy (MYO-26)
+- Command: `./scripts/deploy.sh <commit_sha>`
+- Release path: `/srv/oroboros/releases/<commit_sha>`
+- Atomic switch: `/srv/oroboros/current`
+- Health gate: `scripts/runtime-health-check.sh` (rollback on failure)
+- Full flow: `docs/deployment-flow.md`
 
 ## Non-container Constraint
 This topology intentionally avoids Docker/Compose/Kubernetes and runs services directly as host processes under `systemd`.

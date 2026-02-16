@@ -23,8 +23,11 @@ This repository contains the initial runtime boundaries for the Codex Builder Co
    - `./scripts/runtime-up.sh`
 5. Verify core service health checks:
    - `./scripts/runtime-health-check.sh`
-6. Read topology and operation guides:
+6. Deploy an exact commit with atomic release switch:
+   - `./scripts/deploy.sh <commit_sha>`
+7. Read topology and operation guides:
    - `docs/runtime-topology.md`
+   - `docs/deployment-flow.md`
    - `docs/preview-runtime-slots.md`
    - `docs/db-bootstrap-and-migrations.md`
    - `docs/run-state-machine-contract.md`

@@ -6,9 +6,9 @@ After=network.target
 Type=simple
 User=oroboros
 Group=oroboros
-WorkingDirectory=/srv/oroboros
+WorkingDirectory=/srv/oroboros/current
 EnvironmentFile=/etc/oroboros/web-%i.env
-ExecStart=/usr/bin/python3 /srv/oroboros/scripts/run-web-surface.py --root ${WEB_ROOT} --port ${WEB_PORT}
+ExecStart=/usr/bin/python3 /srv/oroboros/current/scripts/run-web-surface.py --root ${WEB_ROOT} --port ${WEB_PORT}
 Restart=always
 RestartSec=3
 
