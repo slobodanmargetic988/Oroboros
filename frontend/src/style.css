@@ -1,23 +1,14 @@
 :root {
   color: #0f172a;
-  background: #f8fafc;
-  font-family: "Segoe UI", sans-serif;
+  background: radial-gradient(circle at 20% 20%, #dbeafe, #f1f5f9 40%, #e2e8f0);
+  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-}
-
-.page {
-  max-width: 760px;
-  margin: 3rem auto;
-  padding: 0 1rem;
-}
-
-h1 {
-  margin-bottom: 0.75rem;
-}
-
-code {
-  font-family: Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  min-height: 100vh;
 }

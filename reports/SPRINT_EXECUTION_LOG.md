@@ -19,7 +19,7 @@ Generated: 2026-02-16 10:22 UTC
 | MYO-33 | A1 | MYO-30 | Todo | BLOCKED |  | backend-developer | blocked | Waiting for MYO-30 |
 | MYO-36 | A1 | MYO-33 | Todo | BLOCKED |  | backend-developer | blocked | Waiting for MYO-33 |
 | MYO-39 | A1 | MYO-36 | Todo | BLOCKED |  | backend-developer | blocked | Waiting for MYO-36 |
-| MYO-19 | A2 | MYO-17 | Todo | BLOCKED |  | frontend-developer | blocked | Prep gate not complete |
+| MYO-19 | A2 | MYO-17 | Agent work DONE | IN_PROGRESS | codex_dev_done | frontend-tester | not_ready | /codex page + prompt submit + live runs inbox with status chips on codex/myo-19-codex-page-runs-inbox |
 | MYO-22 | A2 | MYO-19 | Todo | BLOCKED |  | frontend-developer | blocked | Waiting for MYO-19 |
 | MYO-25 | A2 | MYO-22 | Todo | BLOCKED |  | frontend-developer | blocked | Waiting for MYO-22 |
 | MYO-29 | A2 | MYO-25 | Todo | BLOCKED |  | frontend-developer | blocked | Waiting for MYO-25 |
