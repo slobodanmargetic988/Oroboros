@@ -4,6 +4,8 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 
+from .orchestrator import WorkerOrchestrator
+
 
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -41,15 +43,23 @@ def start_health_server() -> None:
 def main() -> None:
     configure_logging()
     poll_interval = int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "5"))
+    orchestrator = WorkerOrchestrator()
 
     health_thread = Thread(target=start_health_server, daemon=True)
     health_thread.start()
 
-    logging.info("Ouroboros worker scaffold started")
+    logging.info("Ouroboros worker started")
     logging.info("Polling interval: %s seconds", poll_interval)
 
     while True:
-        logging.info("worker heartbeat")
+        try:
+            processed = orchestrator.process_next_run()
+            if processed:
+                logging.info("Processed one queued run")
+            else:
+                logging.info("worker heartbeat")
+        except Exception:
+            logging.exception("Worker cycle failed")
         time.sleep(poll_interval)
 
 
