@@ -1,4 +1,4 @@
-# Preview Runtime Slots (MYO-20)
+# Preview Runtime Slots (MYO-20 / MYO-23)
 
 This document defines fixed preview slot provisioning for host-level deployment.
 
@@ -40,3 +40,48 @@ Direct + routed checks:
 ```
 
 This is host-only provisioning: no Docker/Compose/Kubernetes/containers.
+
+## Deterministic DB Reset + Seed Strategy (MYO-23)
+
+Each preview slot has a dedicated database:
+- `preview1` -> `app_preview_1`
+- `preview2` -> `app_preview_2`
+- `preview3` -> `app_preview_3`
+
+Reset script per slot DB:
+```bash
+./scripts/preview-db-reset.sh --slot preview1
+```
+
+Deterministic seed apply:
+```bash
+./scripts/preview-db-seed.sh --slot preview1 --seed-version v1
+```
+
+Combined reset + load strategy (seed or snapshot):
+```bash
+./scripts/preview-db-reset-and-seed.sh --slot preview1 --run-id <run_id> --strategy seed --seed-version v1
+./scripts/preview-db-reset-and-seed.sh --slot preview1 --run-id <run_id> --strategy snapshot --snapshot-version <snapshot_version>
+```
+
+Dry-run examples:
+```bash
+./scripts/preview-db-reset-and-seed.sh --slot preview1 --run-id dry-run --strategy seed --seed-version v1 --dry-run
+```
+
+## Slot Allocation Flow Integration
+
+Use allocation CLI to lock a slot and execute the deterministic DB reset/seed flow as part of allocation:
+```bash
+./scripts/preview-slot-allocate.sh --run-id <run_id> --seed-version v1 --strategy seed
+```
+
+This flow records per-run reset provenance in control-plane table `preview_db_resets`:
+- `run_id`
+- `slot_id`
+- `db_name`
+- `strategy`
+- `seed_version`
+- `snapshot_version`
+- `reset_status`
+- timestamps and details payload

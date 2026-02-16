@@ -2,6 +2,7 @@
 
 from app.models.approval import Approval
 from app.models.audit_log import AuditLog
+from app.models.preview_db_reset import PreviewDbReset
 from app.models.release import Release
 from app.models.run import Run
 from app.models.run_artifact import RunArtifact
@@ -14,6 +15,7 @@ from app.models.validation_check import ValidationCheck
 __all__ = [
     "Approval",
     "AuditLog",
+    "PreviewDbReset",
     "Release",
     "Run",
     "RunArtifact",

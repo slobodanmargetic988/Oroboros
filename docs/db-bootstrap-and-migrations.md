@@ -10,6 +10,7 @@ This project uses Alembic for control-plane schema migrations.
 ## Baseline Schema
 - Migration root: `backend/alembic/`
 - Initial migration: `backend/alembic/versions/20260216_0001_initial_control_plane.py`
+- Preview DB reset tracking migration: `backend/alembic/versions/20260216_0002_preview_db_resets.py`
 
 The baseline creates the MVP control-plane entities:
 - `users`
@@ -19,6 +20,7 @@ The baseline creates the MVP control-plane entities:
 - `run_artifacts`
 - `validation_checks`
 - `slot_leases`
+- `preview_db_resets`
 - `approvals`
 - `releases`
 - `audit_log`
@@ -45,3 +47,12 @@ The seed script inserts a deterministic starter dataset:
 - run context/event and audit entry
 
 Implementation module: `backend/app/db/seed.py`
+
+## Preview Seed Inputs (slot DBs)
+Deterministic preview slot seed SQL is versioned under:
+- `infra/db/preview/seeds/v1.sql`
+
+Operational wrappers:
+- `scripts/preview-db-reset.sh`
+- `scripts/preview-db-seed.sh`
+- `scripts/preview-db-reset-and-seed.sh`
