@@ -162,17 +162,26 @@ registry_upsert "${TARGET_RELEASE_ID}" "${TARGET_RELEASE_COMMIT}" "rollback_in_p
 log "Switching current symlink atomically to ${TARGET_RELEASE_DIR}"
 switch_current_link "${TARGET_RELEASE_DIR}"
 
-restart_services
+restart_failed=0
+if ! restart_services; then
+  restart_failed=1
+  log "Rollback service restart failed"
+fi
 
-if ! run_health_gate; then
+if [[ "${restart_failed}" == "1" ]] || ! run_health_gate; then
   registry_upsert "${TARGET_RELEASE_ID}" "${TARGET_RELEASE_COMMIT}" "rollback_failed"
   if [[ -n "${PREVIOUS_TARGET}" ]]; then
     log "Restoring previous symlink target: ${PREVIOUS_TARGET}"
     switch_current_link "${PREVIOUS_TARGET}"
-    restart_services
+    if ! restart_services; then
+      log "Service restart failed while restoring previous target"
+    fi
     if [[ -n "${PREVIOUS_RELEASE_ID}" ]]; then
       registry_upsert "${PREVIOUS_RELEASE_ID}" "${PREVIOUS_RELEASE_COMMIT:-${PREVIOUS_RELEASE_ID}}" "deployed"
     fi
+  fi
+  if [[ "${restart_failed}" == "1" ]]; then
+    die "Rollback failed service restart"
   fi
   die "Rollback failed health gate"
 fi

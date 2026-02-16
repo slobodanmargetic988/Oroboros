@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import get_db_session
 from app.services.slot_lease_manager import (
     WAITING_FOR_SLOT_REASON,
@@ -17,6 +18,15 @@ from app.services.slot_lease_manager import (
 )
 
 router = APIRouter(prefix="/api/slots", tags=["slots"])
+
+
+def _configured_slot_ids() -> list[str]:
+    settings = get_settings()
+    raw = getattr(settings, "slot_ids_csv", "preview-1,preview-2,preview-3")
+    slot_ids = [part.strip() for part in raw.split(",") if part.strip()]
+    if not slot_ids:
+        return ["preview-1", "preview-2", "preview-3"]
+    return slot_ids
 
 
 class AcquireSlotRequest(BaseModel):
@@ -141,5 +151,5 @@ def slot_contract() -> dict[str, object]:
                 "queue_behavior": "run_kept_queued_while_waiting_for_slot",
             }
         },
-        "slot_ids": ["preview-1", "preview-2", "preview-3"],
+        "slot_ids": _configured_slot_ids(),
     }

@@ -54,15 +54,41 @@
         </div>
       </div>
 
+      <div class="route-filter-row">
+        <label>
+          Route Filter
+          <input
+            v-model="routeFilter"
+            type="text"
+            placeholder="/codex"
+          />
+        </label>
+        <button @click="applyCurrentRouteFilter">Use Current Route</button>
+        <button @click="clearRouteFilter">Clear Route Filter</button>
+      </div>
+
       <div class="meta-row">
         <span>Total: {{ total }}</span>
+        <span>Visible: {{ visibleRuns.length }}</span>
         <span>Offset: {{ offset }}</span>
         <span>Limit: {{ limit }}</span>
         <span>Last sync: {{ lastSyncLabel }}</span>
       </div>
 
-      <ul v-if="runs.length" class="runs-list">
-        <li v-for="run in runs" :key="run.id" class="run-item">
+      <div v-if="currentRouteRuns.length" class="related-panel">
+        <p class="related-head">
+          Related to current route <code>{{ currentRoutePath }}</code>
+        </p>
+        <ul class="related-links">
+          <li v-for="run in currentRouteRuns.slice(0, 5)" :key="`related-${run.id}`">
+            <RouterLink :to="`/codex/runs/${run.id}`">{{ run.title }}</RouterLink>
+            <span :class="statusChipClass(run.status)">{{ run.status }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <ul v-if="visibleRuns.length" class="runs-list">
+        <li v-for="run in visibleRuns" :key="run.id" class="run-item">
           <div class="run-top">
             <strong>{{ run.title }}</strong>
             <div class="run-actions">
@@ -73,12 +99,13 @@
           <p class="run-prompt">{{ run.prompt }}</p>
           <div class="run-meta">
             <span>ID: {{ run.id }}</span>
-            <span>Route: {{ run.context?.route || run.route || "n/a" }}</span>
+            <span>Route: <code>{{ getRunRoute(run) }}</code></span>
+            <span v-if="isRunRelatedToRoute(getRunRoute(run), currentRoutePath)" class="route-badge">On this page</span>
             <span>Note: {{ run.context?.note || "-" }}</span>
           </div>
         </li>
       </ul>
-      <p v-else class="empty">No runs found for current filter.</p>
+      <p v-else class="empty">No runs found for current filter settings.</p>
 
       <div class="pager">
         <button :disabled="offset === 0" @click="prevPage">Previous</button>
@@ -89,11 +116,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 
-import { makeRunTitle, RunItem, RunListResponse, statusChipClass } from "../lib/runs";
+import {
+  filterRunsByRoute,
+  getRunRoute,
+  isRunRelatedToRoute,
+  makeRunTitle,
+  normalizeRoutePath,
+  RunItem,
+  RunListResponse,
+  statusChipClass,
+} from "../lib/runs";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+const viewRoute = useRoute();
 
 const prompt = ref("");
 const route = ref("/codex");
@@ -107,6 +145,7 @@ const total = ref(0);
 const limit = ref(10);
 const offset = ref(0);
 const statusFilter = ref("");
+const routeFilter = ref("");
 const lastSync = ref<Date | null>(null);
 
 const commonStatuses = [
@@ -131,6 +170,15 @@ const lastSyncLabel = computed(() => {
   }
   return lastSync.value.toLocaleTimeString();
 });
+const currentRoutePath = computed(() => normalizeRoutePath(viewRoute.fullPath || viewRoute.path));
+const visibleRuns = computed(() => {
+  const filterRoute = routeFilter.value.trim();
+  if (!filterRoute) {
+    return runs.value;
+  }
+  return filterRunsByRoute(runs.value, filterRoute);
+});
+const currentRouteRuns = computed(() => filterRunsByRoute(runs.value, currentRoutePath.value));
 
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -196,6 +244,10 @@ async function refreshRuns() {
   if (statusFilter.value) {
     params.append("status", statusFilter.value);
   }
+  const filterRoute = routeFilter.value.trim();
+  if (filterRoute) {
+    params.append("route", normalizeRoutePath(filterRoute));
+  }
 
   const response = await fetch(`${apiBaseUrl}/api/runs?${params.toString()}`);
   if (!response.ok) {
@@ -208,6 +260,30 @@ async function refreshRuns() {
   limit.value = payload.limit;
   offset.value = payload.offset;
   lastSync.value = new Date();
+}
+
+function applyCurrentRouteFilter() {
+  routeFilter.value = currentRoutePath.value;
+  offset.value = 0;
+  void refreshRuns();
+}
+
+function clearRouteFilter() {
+  if (!routeFilter.value) {
+    return;
+  }
+  routeFilter.value = "";
+  offset.value = 0;
+  void refreshRuns();
+}
+
+function syncRouteFilterFromQuery() {
+  const value = viewRoute.query.route;
+  if (typeof value === "string" && value.trim()) {
+    routeFilter.value = normalizeRoutePath(value);
+    return;
+  }
+  routeFilter.value = "";
 }
 
 async function nextPage() {
@@ -227,11 +303,21 @@ async function prevPage() {
 }
 
 onMounted(async () => {
+  syncRouteFilterFromQuery();
   await refreshRuns();
   pollHandle = setInterval(() => {
     void refreshRuns();
   }, 5000);
 });
+
+watch(
+  () => viewRoute.query.route,
+  () => {
+    syncRouteFilterFromQuery();
+    offset.value = 0;
+    void refreshRuns();
+  },
+);
 
 onUnmounted(() => {
   if (pollHandle) {
@@ -361,6 +447,19 @@ button:disabled {
   gap: 0.6rem;
 }
 
+.route-filter-row {
+  margin-bottom: 0.8rem;
+  display: flex;
+  align-items: end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.route-filter-row label {
+  min-width: 240px;
+  flex: 1;
+}
+
 .meta-row {
   display: flex;
   gap: 0.8rem;
@@ -368,6 +467,45 @@ button:disabled {
   font-size: 0.84rem;
   margin-bottom: 0.8rem;
   flex-wrap: wrap;
+}
+
+.related-panel {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  border-radius: 10px;
+  padding: 0.7rem;
+  margin-bottom: 0.8rem;
+}
+
+.related-head {
+  margin: 0 0 0.45rem;
+  color: #1e3a8a;
+  font-size: 0.85rem;
+}
+
+.related-links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.related-links li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.related-links a {
+  color: #1d4ed8;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.related-links a:hover {
+  text-decoration: underline;
 }
 
 .runs-list {
@@ -415,6 +553,16 @@ button:disabled {
   color: #64748b;
   font-size: 0.82rem;
   flex-wrap: wrap;
+}
+
+.route-badge {
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+  color: #1e40af;
 }
 
 .chip {
@@ -468,6 +616,10 @@ button:disabled {
   }
 
   .panel-controls {
+    align-items: stretch;
+  }
+
+  .route-filter-row {
     align-items: stretch;
   }
 }

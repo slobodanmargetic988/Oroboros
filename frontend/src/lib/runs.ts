@@ -59,6 +59,22 @@ export interface ArtifactLink {
   source: string;
 }
 
+export interface FileDiffEntry {
+  path: string;
+  additions: number | null;
+  deletions: number | null;
+  patch: string | null;
+  source: string;
+}
+
+export interface ChecksSummary {
+  total: number;
+  passed: number;
+  failed: number;
+  running: number;
+  pending: number;
+}
+
 export interface RunListResponse {
   items: RunItem[];
   total: number;
@@ -67,6 +83,9 @@ export interface RunListResponse {
 }
 
 const artifactHintPattern = /(artifact|log|uri|url|report|output)/i;
+const diffHintPattern = /(diff|patch|file|change|modified|updated)/i;
+const diffPathKeyPattern = /(path|file|filename|name|target_file|old_path|new_path)/i;
+const diffPatchKeyPattern = /^(patch|diff|snippet)$/i;
 
 export function statusChipClass(status: RunStatus): string {
   const normalized = status.toLowerCase();
@@ -219,4 +238,205 @@ export function extractFailureReasons(
   });
 
   return [...reasons];
+}
+
+function toInteger(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, Math.floor(parsed));
+    }
+  }
+  return null;
+}
+
+function looksLikePath(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) {
+    return false;
+  }
+  if (normalized.includes("\n") || normalized.includes("\r")) {
+    return false;
+  }
+  if (normalized.startsWith("@@ ") || normalized.startsWith("diff --git ")) {
+    return false;
+  }
+  return normalized.includes("/") || normalized.includes(".");
+}
+
+function toPathFromRecord(record: Record<string, unknown>): string | null {
+  const keys = ["path", "file", "filename", "name", "target_file"];
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim() && looksLikePath(value)) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function toPatchFromRecord(record: Record<string, unknown>): string | null {
+  const keys = ["patch", "diff", "snippet"];
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function toDiffEntry(
+  path: string,
+  source: string,
+  record?: Record<string, unknown>,
+): FileDiffEntry {
+  return {
+    path,
+    additions: record ? toInteger(record.additions ?? record.insertions ?? record.added_lines) : null,
+    deletions: record ? toInteger(record.deletions ?? record.removed_lines) : null,
+    patch: record ? toPatchFromRecord(record) : null,
+    source,
+  };
+}
+
+export function extractFileDiffEntries(events: RunEventItem[]): FileDiffEntry[] {
+  const entries: FileDiffEntry[] = [];
+  const seen = new Set<string>();
+
+  const pushUnique = (entry: FileDiffEntry) => {
+    const key = `${entry.source}:${entry.path}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    entries.push(entry);
+  };
+
+  const walk = (value: unknown, source: string, inheritedHint: boolean) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => walk(item, source, inheritedHint));
+      return;
+    }
+
+    if (isRecord(value)) {
+      const directPath = toPathFromRecord(value);
+      if (directPath) {
+        pushUnique(toDiffEntry(directPath, source, value));
+      }
+
+      Object.entries(value).forEach(([key, nested]) => {
+        const hint = inheritedHint || diffHintPattern.test(key);
+
+        if (typeof nested === "string") {
+          if (diffPatchKeyPattern.test(key)) {
+            return;
+          }
+          if (
+            hint &&
+            diffPathKeyPattern.test(key) &&
+            looksLikePath(nested)
+          ) {
+            pushUnique(toDiffEntry(nested.trim(), source));
+          }
+          return;
+        }
+
+        walk(nested, source, hint);
+      });
+    }
+  };
+
+  events.forEach((event) => {
+    if (!event.payload) {
+      return;
+    }
+    walk(event.payload, `event:${event.event_type}`, false);
+  });
+
+  return entries.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+export function hasMigrationWarning(entries: FileDiffEntry[]): boolean {
+  return entries.some((entry) => /(alembic|migrations?|migration|\.sql$)/i.test(entry.path));
+}
+
+export function summarizeChecks(checks: ValidationCheckItem[]): ChecksSummary {
+  const summary: ChecksSummary = {
+    total: checks.length,
+    passed: 0,
+    failed: 0,
+    running: 0,
+    pending: 0,
+  };
+
+  checks.forEach((check) => {
+    const status = check.status.toLowerCase();
+    if (status.includes("fail") || status.includes("error")) {
+      summary.failed += 1;
+      return;
+    }
+    if (status.includes("pass") || status.includes("success") || status === "ok") {
+      summary.passed += 1;
+      return;
+    }
+    if (
+      status.includes("run") ||
+      status.includes("progress") ||
+      status.includes("queued") ||
+      status === "planning" ||
+      status === "testing"
+    ) {
+      summary.running += 1;
+      return;
+    }
+    summary.pending += 1;
+  });
+
+  return summary;
+}
+
+export function normalizeRoutePath(route: string | null | undefined): string {
+  const value = (route ?? "").trim();
+  if (!value) {
+    return "/";
+  }
+
+  const [pathOnly] = value.split(/[?#]/, 1);
+  const ensuredPrefix = pathOnly.startsWith("/") ? pathOnly : `/${pathOnly}`;
+  if (ensuredPrefix.length > 1 && ensuredPrefix.endsWith("/")) {
+    return ensuredPrefix.slice(0, -1);
+  }
+  return ensuredPrefix || "/";
+}
+
+export function getRunRoute(run: RunItem): string {
+  return normalizeRoutePath(run.context?.route || run.route || "/");
+}
+
+export function isRunRelatedToRoute(runRoute: string, currentRoute: string): boolean {
+  const normalizedRunRoute = normalizeRoutePath(runRoute);
+  const normalizedCurrentRoute = normalizeRoutePath(currentRoute);
+
+  if (normalizedRunRoute === normalizedCurrentRoute) {
+    return true;
+  }
+
+  if (normalizedCurrentRoute.startsWith(`${normalizedRunRoute}/`)) {
+    return true;
+  }
+
+  if (normalizedRunRoute.startsWith(`${normalizedCurrentRoute}/`)) {
+    return true;
+  }
+
+  return false;
+}
+
+export function filterRunsByRoute(runs: RunItem[], route: string | null | undefined): RunItem[] {
+  const normalizedRoute = normalizeRoutePath(route);
+  return runs.filter((run) => isRunRelatedToRoute(getRunRoute(run), normalizedRoute));
 }

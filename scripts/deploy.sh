@@ -144,7 +144,10 @@ run_health_gate() {
   fi
 
   log "Running post-deploy health gate: ${DEPLOY_HEALTHCHECK_CMD}"
-  if ! bash -lc "${DEPLOY_HEALTHCHECK_CMD}"; then
+  if ! (
+    cd "${DEPLOY_CURRENT_LINK}" &&
+    bash -lc "${DEPLOY_HEALTHCHECK_CMD}"
+  ); then
     log "Health gate failed"
     if [[ -n "${PREVIOUS_TARGET}" ]]; then
       log "Rolling back symlink to previous release: ${PREVIOUS_TARGET}"
