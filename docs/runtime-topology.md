@@ -17,6 +17,14 @@ This document defines the host-native process topology for:
 - Env files: `infra/systemd/env/*.env` (installed to `/etc/oroboros/`)
 - Runtime code path: `/srv/oroboros/current` (atomic release symlink target)
 
+## Service Users
+- `ouroboros-worker.service` runs as dedicated host identity `oroboros-worker`.
+- `ouroboros-api.service` and web surfaces run as `oroboros`.
+- Reverse proxy runs as `caddy`.
+
+Worker security guardrails and policy controls are documented in:
+- `docs/worker-security-guardrails.md`
+
 ## Service Topology
 
 | Service | systemd Unit | Bind Address | Port | Hostname / Route |
@@ -52,6 +60,7 @@ Preview slot-specific provisioning/health contract:
   - `REDIS_URL=redis://127.0.0.1:6379/0`
   - `WORKER_POLL_INTERVAL_SECONDS=5`
   - `WORKER_HEALTH_PORT=8090`
+  - `WORKER_ARTIFACT_ROOT=/srv/oroboros/artifacts/runs`
 - Web surfaces (`/etc/oroboros/web-*.env`):
   - `WEB_ROOT=/srv/oroboros/current/infra/<web-root>`
   - `WEB_PORT=<3100..3103>`

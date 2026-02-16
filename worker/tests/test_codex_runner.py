@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 WORKER_ROOT = Path(__file__).resolve().parents[1]
 if str(WORKER_ROOT) not in sys.path:
@@ -139,6 +140,70 @@ class RunCodexCommandTests(unittest.TestCase):
             self.assertFalse(result.canceled)
             self.assertFalse(result.lease_expired)
             self.assertIn("Failed to start command", output_path.read_text(encoding="utf-8"))
+
+    def test_command_allowlist_blocks_disallowed_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {"WORKER_ALLOWED_COMMANDS": "python,python3"},
+            clear=False,
+        ):
+            output_path = Path(tmp) / "blocked-command.log"
+            result = run_codex_command(
+                command=["bash", "-lc", "echo nope"],
+                worktree_path=Path(tmp),
+                output_path=output_path,
+                timeout_seconds=5,
+                poll_interval_seconds=0.05,
+            )
+
+            self.assertEqual(result.exit_code, 126)
+            self.assertIn("Blocked by command allowlist", output_path.read_text(encoding="utf-8"))
+
+    def test_path_allowlist_blocks_disallowed_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {"WORKER_ALLOWED_PATHS": "/srv/oroboros/worktrees"},
+            clear=False,
+        ):
+            output_path = Path(tmp) / "blocked-path.log"
+            result = run_codex_command(
+                command=[sys.executable, "-c", "print('ok')"],
+                worktree_path=Path(tmp),
+                output_path=output_path,
+                timeout_seconds=5,
+                poll_interval_seconds=0.05,
+            )
+
+            self.assertEqual(result.exit_code, 126)
+            self.assertIn("Blocked by path allowlist", output_path.read_text(encoding="utf-8"))
+
+    def test_preview_subprocess_env_is_isolated_from_parent_secrets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {
+                "DATABASE_URL": "postgresql://secret",
+                "WORKER_SUBPROCESS_ENV_ALLOWLIST": "PATH",
+            },
+            clear=False,
+        ):
+            output_path = Path(tmp) / "env-isolation.log"
+            result = run_codex_command(
+                command=[
+                    sys.executable,
+                    "-c",
+                    "import os; print(os.getenv('DATABASE_URL','missing')); print(os.getenv('RUN_ID','missing'))",
+                ],
+                worktree_path=Path(tmp),
+                output_path=output_path,
+                timeout_seconds=5,
+                poll_interval_seconds=0.05,
+                env={"RUN_ID": "run-123"},
+            )
+
+            log = output_path.read_text(encoding="utf-8")
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn("missing", log)
+            self.assertIn("run-123", log)
 
 
 if __name__ == "__main__":

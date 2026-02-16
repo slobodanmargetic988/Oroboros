@@ -249,6 +249,10 @@ class WorkerOrchestrator:
             poll_interval_seconds=self.poll_interval_seconds,
             should_cancel=should_cancel,
             on_tick=on_tick,
+            env=self._worker_command_env(
+                run_id=claimed.run_id,
+                slot_id=claimed.slot_id,
+            ),
         )
         ended_at = utcnow()
 
@@ -508,6 +512,11 @@ class WorkerOrchestrator:
                 poll_interval_seconds=self.poll_interval_seconds,
                 should_cancel=should_cancel,
                 on_tick=on_tick,
+                env=self._worker_command_env(
+                    run_id=run.id,
+                    slot_id=claimed.slot_id,
+                    check_name=check.name,
+                ),
             )
             check_ended_at = utcnow()
 
@@ -581,6 +590,24 @@ class WorkerOrchestrator:
                 )
 
         return ValidationPipelineResult(ok=True)
+
+    @staticmethod
+    def _worker_command_env(
+        *,
+        run_id: str,
+        slot_id: str,
+        check_name: str | None = None,
+    ) -> dict[str, str]:
+        env = {
+            "RUN_ID": run_id,
+            "SLOT_ID": slot_id,
+            "OUROBOROS_RUN_ID": run_id,
+            "OUROBOROS_SLOT_ID": slot_id,
+        }
+        if check_name:
+            env["CHECK_NAME"] = check_name
+            env["OUROBOROS_CHECK_NAME"] = check_name
+        return env
 
     def _finalize_success_run(self, *, db, run: Run, result) -> None:
         status_from, status_to = transition_run_status(run, target=RunState.PREVIEW_READY)

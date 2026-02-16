@@ -15,6 +15,14 @@ cp backend/.env.example backend/.env
 cp worker/.env.example worker/.env
 ```
 
+Worker security controls:
+- command allowlist: `WORKER_ALLOWED_COMMANDS`
+- path allowlist: `WORKER_ALLOWED_PATHS`
+- preview subprocess env isolation:
+  - `WORKER_SUBPROCESS_ENV_ALLOWLIST`
+  - `WORKER_SUBPROCESS_ENV_BLOCKLIST`
+  - `WORKER_PREVIEW_ENV_FILE`
+
 ## 2) Bootstrap backend DB (schema + seed)
 ```bash
 ./scripts/db-bootstrap.sh
