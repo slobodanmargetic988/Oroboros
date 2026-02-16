@@ -346,6 +346,52 @@ describe("slot helpers", () => {
     });
   });
 
+  it("extracts latest slot waiting reason regardless of event ordering", () => {
+    const result = extractLatestSlotWaitingReason([
+      {
+        id: 22,
+        run_id: "run-1",
+        event_type: "slot_waiting",
+        status_from: null,
+        status_to: null,
+        payload: {
+          reason: "WAITING_FOR_SLOT",
+          occupied_slots: ["preview-1", "preview-2"],
+          queue_behavior: "run_kept_queued_while_waiting_for_slot",
+        },
+        created_at: "2026-02-16T00:02:00Z",
+      },
+      {
+        id: 19,
+        run_id: "run-1",
+        event_type: "slot_waiting",
+        status_from: null,
+        status_to: null,
+        payload: {
+          reason: "WAITING_FOR_SLOT",
+          occupied_slots: ["preview-3"],
+          queue_behavior: "run_kept_queued_while_waiting_for_slot",
+        },
+        created_at: "2026-02-16T00:01:00Z",
+      },
+      {
+        id: 18,
+        run_id: "run-1",
+        event_type: "status_transition",
+        status_from: "queued",
+        status_to: "planning",
+        payload: null,
+        created_at: "2026-02-16T00:03:00Z",
+      },
+    ]);
+
+    expect(result).toEqual({
+      reason: "WAITING_FOR_SLOT",
+      occupied_slots: ["preview-1", "preview-2"],
+      queue_behavior: "run_kept_queued_while_waiting_for_slot",
+    });
+  });
+
   it("maps preview slot id to URL", () => {
     expect(previewUrlForSlot("preview-2")).toBe("https://preview2.example.com");
     expect(previewUrlForSlot("unknown")).toBe("https://app.example.com");

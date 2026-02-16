@@ -463,23 +463,41 @@ export function filterRunsByRoute(runs: RunItem[], route: string | null | undefi
 }
 
 export function extractLatestSlotWaitingReason(events: RunEventItem[]): SlotWaitingReason | null {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
+  let latestEvent: RunEventItem | null = null;
+  for (const event of events) {
     if (!event || event.event_type !== "slot_waiting" || !event.payload) {
       continue;
     }
+    if (!latestEvent) {
+      latestEvent = event;
+      continue;
+    }
 
+    const latestAt = Date.parse(latestEvent.created_at);
+    const currentAt = Date.parse(event.created_at);
+    if (Number.isFinite(currentAt) && Number.isFinite(latestAt)) {
+      if (currentAt > latestAt || (currentAt === latestAt && event.id > latestEvent.id)) {
+        latestEvent = event;
+      }
+      continue;
+    }
+    if (event.id > latestEvent.id) {
+      latestEvent = event;
+    }
+  }
+
+  if (latestEvent?.payload) {
     const reason =
-      typeof event.payload.reason === "string" && event.payload.reason.trim()
-        ? event.payload.reason.trim()
+      typeof latestEvent.payload.reason === "string" && latestEvent.payload.reason.trim()
+        ? latestEvent.payload.reason.trim()
         : "WAITING_FOR_SLOT";
     const queueBehavior =
-      typeof event.payload.queue_behavior === "string" && event.payload.queue_behavior.trim()
-        ? event.payload.queue_behavior.trim()
+      typeof latestEvent.payload.queue_behavior === "string" && latestEvent.payload.queue_behavior.trim()
+        ? latestEvent.payload.queue_behavior.trim()
         : null;
 
-    const occupiedSlots = Array.isArray(event.payload.occupied_slots)
-      ? event.payload.occupied_slots
+    const occupiedSlots = Array.isArray(latestEvent.payload.occupied_slots)
+      ? latestEvent.payload.occupied_slots
           .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
           .map((value) => value.trim())
       : [];

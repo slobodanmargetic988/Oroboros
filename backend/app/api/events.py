@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -27,12 +27,18 @@ class RunEventResponse(BaseModel):
 def list_run_events(
     run_id: str,
     limit: int = Query(default=200, ge=1, le=500),
+    order: Literal["asc", "desc"] = Query(default="asc"),
     db: Session = Depends(get_db_session),
 ) -> list[RunEventResponse]:
+    order_clause = (
+        (RunEvent.created_at.desc(), RunEvent.id.desc())
+        if order == "desc"
+        else (RunEvent.created_at.asc(), RunEvent.id.asc())
+    )
     events = (
         db.query(RunEvent)
         .filter(RunEvent.run_id == run_id)
-        .order_by(RunEvent.created_at.asc(), RunEvent.id.asc())
+        .order_by(*order_clause)
         .limit(limit)
         .all()
     )

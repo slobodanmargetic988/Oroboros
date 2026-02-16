@@ -291,8 +291,12 @@ function getRunSlot(run: RunItem): string | null {
   return slotByRunId.value.get(run.id)?.slot_id ?? null;
 }
 
+function isWaitingForSlot(run: RunItem): boolean {
+  return run.status.toLowerCase() === "queued" && !getRunSlot(run);
+}
+
 function getRunWaitingReasonLabel(run: RunItem): string | null {
-  if (getRunSlot(run)) {
+  if (!isWaitingForSlot(run)) {
     return null;
   }
   const waiting = waitingReasonsByRunId.value[run.id];
@@ -361,7 +365,7 @@ async function fetchSlotStates(): Promise<void> {
 }
 
 async function fetchWaitingReasons(runItems: RunItem[]): Promise<void> {
-  const candidates = runItems.filter((run) => !run.slot_id);
+  const candidates = runItems.filter((run) => isWaitingForSlot(run));
   if (!candidates.length) {
     waitingReasonsByRunId.value = {};
     return;
@@ -370,7 +374,7 @@ async function fetchWaitingReasons(runItems: RunItem[]): Promise<void> {
   const waitingPairs = await Promise.all(
     candidates.map(async (run) => {
       try {
-        const response = await fetch(`${apiBaseUrl}/api/runs/${run.id}/events?limit=200`);
+        const response = await fetch(`${apiBaseUrl}/api/runs/${run.id}/events?limit=500&order=desc`);
         if (!response.ok) {
           return [run.id, null] as const;
         }
