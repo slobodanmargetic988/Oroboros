@@ -75,5 +75,12 @@ Use `scripts/runtime-health-check.sh` for one-command verification.
 - Health gate: `scripts/runtime-health-check.sh` (rollback on failure)
 - Full flow: `docs/deployment-flow.md`
 
+## Scripted Rollback (MYO-28)
+- Command: `./scripts/rollback.sh <release_id>`
+- Target: existing host release at `/srv/oroboros/releases/<release_id>`
+- Atomic switch: `/srv/oroboros/current`
+- Health gate: `scripts/runtime-health-check.sh` (restore previous target on failure)
+- Release registry updates recorded in control-plane DB (`releases` table)
+
 ## Non-container Constraint
 This topology intentionally avoids Docker/Compose/Kubernetes and runs services directly as host processes under `systemd`.
