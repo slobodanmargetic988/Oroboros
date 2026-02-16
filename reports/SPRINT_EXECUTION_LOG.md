@@ -7,7 +7,7 @@ Generated: 2026-02-16 11:32 UTC
 | MYO-15 | Prep | MYO-14 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | host-only runtime validated in tester pass |
 | MYO-16 | Prep | MYO-15 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | migration-integrity tester pass on branch `codex/myo-16-control-plane-schema` |
 | MYO-17 | Prep | MYO-16 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | run-state-machine contract tester pass on branch `codex/myo-17-state-machine-contract` |
-| MYO-18 | A1 | MYO-17 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
+| MYO-18 | A1 | MYO-17 | Agent test DONE | prepared | READY_FOR_REVIEW | codex_test_done | reviewer (`Agent review`) | runs API/persistence tester pass on branch `codex/myo-18-runs-api` |
 | MYO-21 | A1 | MYO-18 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-24 | A1 | MYO-21 | Todo | blocked | BLOCKED |  | backend-developer | n/a |
 | MYO-27 | A1 | MYO-24 | Todo | blocked | BLOCKED |  | backend-developer | n/a |

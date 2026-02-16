@@ -1,12 +1,12 @@
 # BACKEND_TEST_REPORT
-Generated: 2026-02-16 11:57 UTC
+Generated: 2026-02-16 12:02 UTC
 Tester Agent: backend-tester
-Task: MYO-17
+Task: MYO-18
 Project: Ouroboros (team Myownmint)
-Branch: codex/myo-17-state-machine-contract
-Commit: f715062
+Branch: codex/myo-18-runs-api
+Commit: d463ab8
 Harness Mode: developer_handoff
-Extra Focus: contract
+Extra Focus: api-contract,persistence
 
 ## Verdict
 - Result: PASS
@@ -14,39 +14,27 @@ Extra Focus: contract
 - Linear transition applied: `Agent work DONE` -> `Agent testing` -> `Agent test DONE`
 
 ## Scope Under Test
-- Backend run state transitions
-- Failure reason code handling
-- API stubs for runs/events/checks/approvals
-- Run state machine contract documentation
+- `backend/app/api/runs.py`
+- Run/context persistence (route, note, metadata)
+- Pagination and status filter behavior
 
 ## Evidence
-### Passed checks
-1. Contract/state machine implementation present
-   - `backend/app/domain/run_state_machine.py` defines canonical run states, valid transition map, terminal guardrails, and standardized `FailureReasonCode` values.
-2. Contract documentation published
-   - `docs/run-state-machine-contract.md` exists and matches API/state machine semantics.
-3. API skeleton routes are registered and reachable
-   - Runs: create/list/detail/transition/cancel/retry/contract
-   - Events: list + stream stub
-   - Checks: list
-   - Approvals: list/approve/reject
-4. Transition enforcement validated via API behavior (SQLite DB seeded by Alembic head)
-   - Invalid transition blocked: `queued -> deploying` => `409`
-   - Missing failure reason blocked: `to_status=failed` without code => `409`
-   - Valid transition allowed: `queued -> planning` => `200`
-   - Failed with standardized reason allowed: `planning -> failed` + `VALIDATION_FAILED` => `200`
-   - Terminal-state transition blocked: `failed -> editing` => `409`
-5. Approval flow contract validated
-   - Progression to `needs_approval` succeeded
-   - `POST /approve` succeeded (`200`)
-   - `POST /reject` succeeded (`200`) with `POLICY_REJECTED`
-6. Stub endpoints validated
-   - `GET /api/runs/{id}/events` => `200`
-   - `GET /api/runs/{id}/checks` => `200` (empty list acceptable)
-   - `GET /api/runs/{id}/approvals` => `200`
-   - `GET /api/runs/{id}/events/stream` => `200` with `status=not_implemented`
-7. Host-only runtime policy respected
-   - Tester run used no Docker/Compose/K8s/container assumptions.
+1. Endpoints validated:
+   - `POST /api/runs`
+   - `GET /api/runs`
+   - `GET /api/runs/{run_id}`
+2. Persistence validated:
+   - Create response includes persisted context values.
+   - DB row exists in `run_context` with expected route/note/metadata.
+3. Pagination validated:
+   - `limit=1,offset=0` and `limit=1,offset=1` both return expected page size and metadata (`total`, `limit`, `offset`).
+4. Status filters validated:
+   - `status=queued` -> total 1
+   - `status=planning` -> total 2
+   - `status=queued&status=planning` -> total 3
+5. Detail behavior validated:
+   - Existing run returns persisted context.
+   - Missing run ID returns 404.
 
 ## Defects
 - None found in this tester pass.
