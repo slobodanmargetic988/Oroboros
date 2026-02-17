@@ -40,9 +40,9 @@ Residual risk register:
    - Status: Mitigated by operating procedure; no blocker for MVP release.
 
 ### C) Go-live signoff recorded
-- Signoff decision: Pending explicit owner confirmation.
-- Approver: Pending
-- Timestamp: Pending
+- Signoff decision: Signof is a GO
+- Approver: slobodan margetic
+- Timestamp: 17.02.2026 09:16
 
 ## 3) Non-Container Compliance Gate
 Validated as PASS.
