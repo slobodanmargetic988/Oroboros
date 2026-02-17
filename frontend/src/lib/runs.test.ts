@@ -393,7 +393,7 @@ describe("slot helpers", () => {
   });
 
   it("maps preview slot id to URL", () => {
-    expect(previewUrlForSlot("preview-2")).toBe("https://preview2.example.com");
-    expect(previewUrlForSlot("unknown")).toBe("https://app.example.com");
+    expect(previewUrlForSlot("preview-2")).toBe("http://127.0.0.1:3102");
+    expect(previewUrlForSlot("unknown")).toBe("http://127.0.0.1:3100");
   });
 });

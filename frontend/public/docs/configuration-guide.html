@@ -514,9 +514,13 @@
             </tr>
             <tr>
               <td>Frontend runtime</td>
-              <td><code>VITE_API_BASE_URL</code>, <code>VITE_CODEX_USER_ID</code></td>
-              <td><code>http://127.0.0.1:8000</code>, unset</td>
-              <td>Any API origin / optional user id label.</td>
+              <td><code>VITE_API_BASE_URL</code>, <code>VITE_PREVIEW_URL_TEMPLATE</code>, <code>VITE_APP_URL</code>,
+                <code>VITE_CODEX_USER_ID</code>
+              </td>
+              <td><code>http://127.0.0.1:8000</code>, <code>http://127.0.0.1:310{slot}</code>,
+                <code>http://127.0.0.1:3100</code>, unset
+              </td>
+              <td>API origin + preview-link template + app fallback URL + optional user id label.</td>
             </tr>
             <tr>
               <td>Structured trace context</td>
@@ -649,14 +653,22 @@ PREVIEW_API_BASE_URL=https://api.example.com</code></pre>
       <h2>9) Frontend Configuration</h2>
       <pre><code># frontend/.env
 VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_PREVIEW_URL_TEMPLATE=http://127.0.0.1:310{slot}
+VITE_APP_URL=http://127.0.0.1:3100
 VITE_CODEX_USER_ID=local-user</code></pre>
+      <p class="small">
+        <code>VITE_PREVIEW_URL_TEMPLATE</code> must include <code>{slot}</code>. Example:
+        <code>http://127.0.0.1:310{slot}</code> maps <code>preview-1</code> to <code>http://127.0.0.1:3101</code>.
+      </p>
       <p>After frontend env changes, restart the frontend process or rebuild/redeploy web assets.</p>
       <h3>Prod CORS + frontend origin example</h3>
       <pre><code># backend/.env or /etc/oroboros/api.env
 CORS_ALLOWED_ORIGINS_CSV=https://app.example.com,https://staging.example.com
 
 # frontend/.env
-VITE_API_BASE_URL=https://api.example.com</code></pre>
+VITE_API_BASE_URL=https://api.example.com
+VITE_PREVIEW_URL_TEMPLATE=https://preview{slot}.example.com
+VITE_APP_URL=https://app.example.com</code></pre>
       <p class="small">
         If your frontend and API are served from the same origin, CORS can be minimal. If origins differ, this
         variable is required for browser requests to succeed.

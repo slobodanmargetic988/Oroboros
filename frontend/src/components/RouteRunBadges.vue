@@ -1,30 +1,43 @@
 <template>
-  <aside v-if="relatedRuns.length || loading || !!loadError" class="route-badge-shell" aria-live="polite">
-    <div class="route-badge-head">
-      <p class="route-badge-title">Route Runs</p>
-      <span class="route-badge-count">{{ relatedRuns.length }}</span>
-    </div>
-    <p class="route-badge-path">{{ normalizedCurrentRoute }}</p>
-    <p v-if="loadError" class="route-badge-error" role="alert">{{ loadError }}</p>
-
-    <p v-if="loading && !relatedRuns.length" class="route-badge-empty">Loading route runs...</p>
-    <ul v-else-if="relatedRuns.length" class="route-badge-links">
-      <li v-for="run in relatedRuns.slice(0, 4)" :key="run.id">
-        <RouterLink :to="`/codex/runs/${run.id}`">
-          {{ run.title }}
-        </RouterLink>
-        <span :class="statusChipClass(run.status)">{{ run.status }}</span>
-      </li>
-    </ul>
-    <p v-else class="route-badge-empty">No runs linked to this route yet.</p>
-
-    <RouterLink
-      v-if="relatedRuns.length"
-      class="route-badge-more"
-      :to="`/codex?route=${encodeURIComponent(normalizedCurrentRoute)}`"
+  <aside class="route-badge-shell" aria-live="polite">
+    <button
+      type="button"
+      class="route-badge-toggle"
+      :aria-expanded="panelOpen ? 'true' : 'false'"
+      aria-controls="route-runs-panel"
+      @click="togglePanel"
     >
-      Open related runs in inbox
-    </RouterLink>
+      Route Runs
+      <span class="route-badge-count">{{ relatedRuns.length }}</span>
+    </button>
+
+    <section v-if="panelOpen" id="route-runs-panel" class="route-badge-panel">
+      <div class="route-badge-head">
+        <p class="route-badge-title">Route Runs</p>
+        <button type="button" class="route-badge-minimize" @click="closePanel">Hide</button>
+      </div>
+      <p class="route-badge-path">{{ normalizedCurrentRoute }}</p>
+      <p v-if="loadError" class="route-badge-error" role="alert">{{ loadError }}</p>
+
+      <p v-if="loading && !relatedRuns.length" class="route-badge-empty">Loading route runs...</p>
+      <ul v-else-if="relatedRuns.length" class="route-badge-links">
+        <li v-for="run in relatedRuns.slice(0, 4)" :key="run.id">
+          <RouterLink :to="`/codex/runs/${run.id}`">
+            {{ run.title }}
+          </RouterLink>
+          <span :class="statusChipClass(run.status)">{{ run.status }}</span>
+        </li>
+      </ul>
+      <p v-else class="route-badge-empty">No runs linked to this route yet.</p>
+
+      <RouterLink
+        v-if="relatedRuns.length"
+        class="route-badge-more"
+        :to="`/codex?route=${encodeURIComponent(normalizedCurrentRoute)}`"
+      >
+        Open related runs in inbox
+      </RouterLink>
+    </section>
   </aside>
 </template>
 
@@ -41,11 +54,13 @@ import {
 } from "../lib/runs";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+const PANEL_OPEN_STORAGE_KEY = "codex.route_runs.open";
 
 const route = useRoute();
 const runs = ref<RunItem[]>([]);
 const loading = ref(false);
 const loadError = ref("");
+const panelOpen = ref(false);
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 
 const normalizedCurrentRoute = computed(() => normalizeRoutePath(route.fullPath || route.path));
@@ -75,6 +90,20 @@ async function refreshRuns() {
   }
 }
 
+function persistPanelState(): void {
+  window.localStorage.setItem(PANEL_OPEN_STORAGE_KEY, panelOpen.value ? "1" : "0");
+}
+
+function togglePanel(): void {
+  panelOpen.value = !panelOpen.value;
+  persistPanelState();
+}
+
+function closePanel(): void {
+  panelOpen.value = false;
+  persistPanelState();
+}
+
 watch(
   () => route.fullPath,
   () => {
@@ -83,6 +112,7 @@ watch(
 );
 
 onMounted(() => {
+  panelOpen.value = window.localStorage.getItem(PANEL_OPEN_STORAGE_KEY) === "1";
   void refreshRuns();
   pollHandle = setInterval(() => {
     void refreshRuns();
@@ -102,6 +132,27 @@ onUnmounted(() => {
   right: 1rem;
   bottom: 1rem;
   z-index: 40;
+  display: grid;
+  gap: 0.55rem;
+  justify-items: end;
+}
+
+.route-badge-toggle {
+  border: 1px solid #1e293b;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 999px;
+  padding: 0.5rem 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 14px 30px rgba(2, 6, 23, 0.45);
+}
+
+.route-badge-panel {
   width: min(360px, calc(100vw - 2rem));
   background: #0f172a;
   color: #e2e8f0;
@@ -133,6 +184,16 @@ onUnmounted(() => {
   font-size: 0.78rem;
   background: #1d4ed8;
   color: #dbeafe;
+}
+
+.route-badge-minimize {
+  border: 1px solid #334155;
+  background: #0b1327;
+  color: #cbd5e1;
+  border-radius: 8px;
+  padding: 0.16rem 0.45rem;
+  font-size: 0.75rem;
+  cursor: pointer;
 }
 
 .route-badge-path {
