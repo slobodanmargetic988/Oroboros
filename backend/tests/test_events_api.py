@@ -21,7 +21,7 @@ from app.api import events as events_api
 from app.db.base import Base
 from app.db.session import get_db_session
 from app.main import app
-from app.models import AuditLog
+from app.models import AuditLog, User
 
 
 class EventsApiTests(unittest.TestCase):
@@ -91,6 +91,44 @@ class EventsApiTests(unittest.TestCase):
         with self.session_factory() as db:
             actions = [row.action for row in db.query(AuditLog).order_by(AuditLog.id.asc()).all()]
             self.assertIn("run.prompt.submitted", actions)
+
+    def test_create_run_rejects_invalid_created_by_with_422(self) -> None:
+        response = self.client.post(
+            "/api/runs",
+            json={
+                "title": "Invalid creator run",
+                "prompt": "Expect validation error",
+                "route": "/codex",
+                "created_by": "myo43-tester",
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json().get("detail"), "invalid_created_by")
+
+    def test_create_run_accepts_existing_created_by(self) -> None:
+        user_id = "11111111-1111-1111-1111-111111111111"
+        with self.session_factory() as db:
+            db.add(
+                User(
+                    id=user_id,
+                    email="myo43@example.com",
+                    name="MYO43 Tester",
+                    role="tester",
+                )
+            )
+            db.commit()
+
+        response = self.client.post(
+            "/api/runs",
+            json={
+                "title": "Valid creator run",
+                "prompt": "Create run with known creator",
+                "route": "/codex",
+                "created_by": user_id,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("created_by"), user_id)
 
 
 if __name__ == "__main__":

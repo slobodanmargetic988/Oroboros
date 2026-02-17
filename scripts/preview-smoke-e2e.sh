@@ -19,4 +19,4 @@ else
 fi
 
 cd "${BACKEND_DIR}"
-exec PREVIEW_SMOKE_CALLER_CWD="${CALLER_CWD}" "${PYTHON_CMD}" -m app.services.preview_smoke_harness_cli "$@"
+PREVIEW_SMOKE_CALLER_CWD="${CALLER_CWD}" exec "${PYTHON_CMD}" -m app.services.preview_smoke_harness_cli "$@"

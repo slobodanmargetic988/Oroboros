@@ -17,7 +17,7 @@ from app.domain.run_state_machine import (
     list_failure_reason_codes,
     list_run_states,
 )
-from app.models import Run, RunContext, RunEvent
+from app.models import Run, RunContext, RunEvent, User
 from app.services.git_worktree_manager import cleanup_worktree
 from app.services.observability import current_trace_id, emit_structured_log, ensure_trace_id
 from app.services.run_event_log import append_run_event
@@ -240,6 +240,10 @@ def create_run(
     trace_id = ensure_trace_id(request.headers.get("x-trace-id") or current_trace_id())
     metadata = dict(payload.metadata or {})
     metadata.setdefault("trace_id", trace_id)
+    if payload.created_by is not None:
+        creator_exists = db.query(User.id).filter(User.id == payload.created_by).first()
+        if creator_exists is None:
+            raise HTTPException(status_code=422, detail="invalid_created_by")
 
     run = Run(
         title=payload.title,
