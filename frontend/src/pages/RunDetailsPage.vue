@@ -155,7 +155,7 @@
         Current run status: <strong>{{ run?.status ?? "unknown" }}</strong>
       </p>
       <p class="lifecycle-hint">
-        Approve is available in <code>preview_ready</code> and <code>needs_approval</code>. Reject is available in any loaded state.
+        Approve is available in <code>preview_ready</code> and <code>needs_approval</code>. Reject is disabled in <code>merged</code>.
       </p>
       <p class="lifecycle-hint">
         Decision History records approve/reject actions. Expire/resume appear in Timeline events.
@@ -404,7 +404,7 @@ const migrationFiles = computed(() => {
 });
 const checksSummary = computed(() => summarizeChecks(checks.value));
 const canApproveRun = computed(() => Boolean(run.value && ["preview_ready", "needs_approval"].includes(run.value.status)));
-const canRejectRun = computed(() => Boolean(run.value));
+const canRejectRun = computed(() => Boolean(run.value && run.value.status !== "merged"));
 const canExpireRun = computed(() =>
   Boolean(
     run.value &&
