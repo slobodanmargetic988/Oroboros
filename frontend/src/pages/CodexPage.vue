@@ -1,10 +1,9 @@
 <template>
   <div class="codex-page" role="main">
-    <div class="codex-bg-art" aria-hidden="true">
-      <img src="/Ouroboros.png" alt="" />
-    </div>
-
     <header class="hero">
+      <div class="hero-art" aria-hidden="true">
+        <img src="/Ouroboros.png" alt="" />
+      </div>
       <p class="eyebrow">Ouroboros</p>
       <h1>Codex Runs Inbox</h1>
       <p class="subhead">Create a run request, watch status updates, and refresh inbox data in real time.</p>
@@ -587,30 +586,6 @@ onUnmounted(() => {
   gap: 1.2rem;
 }
 
-.codex-bg-art {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 0;
-  pointer-events: none;
-}
-
-.codex-bg-art img {
-  display: block;
-  width: 130vw;
-  max-width: none;
-  height: auto;
-  opacity: 0.26;
-  transform-origin: center center;
-  animation: codex-spin 6s linear infinite;
-}
-
-.codex-page > :not(.codex-bg-art) {
-  position: relative;
-  z-index: 1;
-}
-
 @keyframes codex-spin {
   from {
     transform: rotate(360deg);
@@ -621,10 +596,31 @@ onUnmounted(() => {
 }
 
 .hero {
+  position: relative;
+  overflow: hidden;
   background: linear-gradient(120deg, #0f172a, #164e63);
   color: #e2e8f0;
   border-radius: 14px;
   padding: 1.4rem 1.6rem;
+  padding-right: min(38vw, 23rem);
+}
+
+.hero-art {
+  position: absolute;
+  top: 52%;
+  right: 16px;
+  width: min(24vw, 220px);
+  transform: translateY(-50%);
+  pointer-events: none;
+  opacity: 0.26;
+}
+
+.hero-art img {
+  display: block;
+  width: 100%;
+  height: auto;
+  transform-origin: center center;
+  animation: codex-spin 12s linear infinite;
 }
 
 .eyebrow {
@@ -982,8 +978,14 @@ button:disabled {
 }
 
 @media (max-width: 800px) {
-  .codex-bg-art img {
-    opacity: 0.22;
+  .hero {
+    padding-right: 1.4rem;
+  }
+
+  .hero-art {
+    width: 150px;
+    right: 12px;
+    opacity: 0.16;
   }
 
   .row,

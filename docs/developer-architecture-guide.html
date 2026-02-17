@@ -40,11 +40,28 @@
       }
 
       .hero {
+        position: relative;
+        overflow: hidden;
         border: 1px solid var(--line);
         border-radius: 20px;
         padding: 2rem;
         background: linear-gradient(130deg, #f8fbff 0%, #edf3ff 100%);
         box-shadow: var(--shadow);
+      }
+
+      .hero-mark {
+        position: absolute;
+        top: 24px;
+        right: 28px;
+        width: clamp(170px, 19vw, 250px);
+        opacity: 0.42;
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      .hero > :not(.hero-mark) {
+        position: relative;
+        z-index: 1;
       }
 
       .eyebrow {
@@ -180,11 +197,21 @@
         color: #677698;
         font-size: 0.9rem;
       }
+
+      @media (max-width: 720px) {
+        .hero-mark {
+          width: 132px;
+          top: 16px;
+          right: 16px;
+          opacity: 0.3;
+        }
+      }
     </style>
   </head>
   <body>
     <main class="wrap">
       <header class="hero">
+        <img class="hero-mark" src="../Ouroboros.png" alt="" />
         <p class="eyebrow">Ouroboros</p>
         <h1>Developer Architecture Guide</h1>
         <p class="lead">
