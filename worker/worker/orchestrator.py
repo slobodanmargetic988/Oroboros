@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import logging
 import os
 from pathlib import Path
+import shutil
 import shlex
 import subprocess
 import sys
@@ -33,7 +34,7 @@ from app.domain.run_state_machine import (  # noqa: E402
 )
 from app.models import PreviewDbReset, Run, RunArtifact, RunContext, RunEvent, ValidationCheck  # noqa: E402
 from app.services.git_worktree_manager import assign_worktree  # noqa: E402
-from app.services.preview_db_reset import db_name_for_slot, reset_and_seed_slot  # noqa: E402
+from app.services.preview_db_reset import db_name_for_slot, normalize_slot, reset_and_seed_slot  # noqa: E402
 from app.services.run_event_log import append_run_event  # noqa: E402
 from app.services.slot_lease_manager import (  # noqa: E402
     acquire_slot_lease,
@@ -77,6 +78,16 @@ class AutoCommitResult:
     commit_sha: str | None
     changed_file_count: int
     reason: str | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class PreviewPublishResult:
+    published: bool
+    web_root_path: str | None
+    dist_path: str | None
+    log_artifact_uri: str
+    file_count: int
     error: str | None = None
 
 
@@ -389,6 +400,23 @@ class WorkerOrchestrator:
                 db.commit()
                 return
 
+            if auto_commit.changed_file_count > 0 and not auto_commit.committed:
+                self._finalize_failed_run(
+                    db=db,
+                    run=run,
+                    slot_id=claimed.slot_id,
+                    failure_reason=FailureReasonCode.UNKNOWN_ERROR,
+                    result=result,
+                    extra_payload={
+                        "commit_error": "commit_required_for_detected_changes",
+                        "changed_file_count": auto_commit.changed_file_count,
+                        "commit_reason": auto_commit.reason,
+                    },
+                    trace_id=claimed.trace_id,
+                )
+                db.commit()
+                return
+
             if auto_commit.commit_sha:
                 run.commit_sha = auto_commit.commit_sha
                 append_run_event(
@@ -491,6 +519,30 @@ class WorkerOrchestrator:
                     failure_reason=failure_reason or FailureReasonCode.CHECKS_FAILED,
                     result=failed_result,
                     extra_payload={"failed_check": validation_result.failed_check_name},
+                    trace_id=claimed.trace_id,
+                )
+                db.commit()
+                return
+
+            publish_result = self._publish_preview_surface(
+                db=db,
+                run=run,
+                claimed=claimed,
+                trace_id=claimed.trace_id,
+            )
+            if not publish_result.published:
+                self._finalize_failed_run(
+                    db=db,
+                    run=run,
+                    slot_id=claimed.slot_id,
+                    failure_reason=FailureReasonCode.PREVIEW_PUBLISH_FAILED,
+                    result=result,
+                    extra_payload={
+                        "preview_publish_error": publish_result.error,
+                        "preview_publish_log": publish_result.log_artifact_uri,
+                        "preview_web_root": publish_result.web_root_path,
+                        "preview_dist_path": publish_result.dist_path,
+                    },
                     trace_id=claimed.trace_id,
                 )
                 db.commit()
@@ -891,6 +943,34 @@ class WorkerOrchestrator:
         return proc
 
     def _commit_run_worktree_changes(self, run_id: str, worktree_path: Path) -> AutoCommitResult:
+        expected_branch = f"codex/run-{run_id}"
+        branch_proc = self._run_git_worktree(worktree_path, ["branch", "--show-current"], allow_failure=True)
+        current_branch = branch_proc.stdout.strip() if branch_proc.returncode == 0 else ""
+        if branch_proc.returncode != 0:
+            detail = (branch_proc.stderr.strip() or branch_proc.stdout.strip() or "unknown_error").replace("\n", " ")
+            return AutoCommitResult(
+                committed=False,
+                commit_sha=self._resolve_worktree_commit_sha(worktree_path),
+                changed_file_count=0,
+                error=f"git_branch_probe_failed:{detail}",
+            )
+        if current_branch != expected_branch:
+            checkout_proc = self._run_git_worktree(
+                worktree_path,
+                ["checkout", expected_branch],
+                allow_failure=True,
+            )
+            if checkout_proc.returncode != 0:
+                detail = (
+                    checkout_proc.stderr.strip() or checkout_proc.stdout.strip() or "unknown_error"
+                ).replace("\n", " ")
+                return AutoCommitResult(
+                    committed=False,
+                    commit_sha=self._resolve_worktree_commit_sha(worktree_path),
+                    changed_file_count=0,
+                    error=f"git_checkout_expected_branch_failed:{detail}",
+                )
+
         status = self._run_git_worktree(worktree_path, ["status", "--porcelain", "--untracked-files=all"])
         changed_lines = [line for line in status.stdout.splitlines() if line.strip()]
         if not changed_lines:
@@ -911,11 +991,16 @@ class WorkerOrchestrator:
         if commit_proc.returncode != 0:
             detail = (commit_proc.stderr.strip() or commit_proc.stdout.strip() or "unknown_error").replace("\n", " ")
             if "nothing to commit" in detail.lower():
+                post_status = self._run_git_worktree(
+                    worktree_path,
+                    ["status", "--porcelain", "--untracked-files=all"],
+                )
+                post_changed_lines = [line for line in post_status.stdout.splitlines() if line.strip()]
                 return AutoCommitResult(
                     committed=False,
                     commit_sha=self._resolve_worktree_commit_sha(worktree_path),
-                    changed_file_count=0,
-                    reason="no_changes",
+                    changed_file_count=max(len(changed_lines), len(post_changed_lines)),
+                    error="git_commit_invariant_breach:nothing_to_commit_with_detected_changes",
                 )
             return AutoCommitResult(
                 committed=False,
@@ -929,6 +1014,264 @@ class WorkerOrchestrator:
             commit_sha=self._resolve_worktree_commit_sha(worktree_path),
             changed_file_count=len(changed_lines),
             reason="committed",
+        )
+
+    @staticmethod
+    def _preview_publish_timeout_seconds() -> int:
+        raw = os.getenv("WORKER_PREVIEW_PUBLISH_TIMEOUT_SECONDS", "900")
+        try:
+            return max(30, int(raw))
+        except ValueError:
+            return 900
+
+    @staticmethod
+    def _preview_web_root_template() -> str:
+        default = str(REPO_ROOT / "infra" / "web-preview-{slot}")
+        return os.getenv("WORKER_PREVIEW_WEB_ROOT_TEMPLATE", default).strip() or default
+
+    @staticmethod
+    def _slot_suffix(slot_id: str) -> str:
+        normalized = normalize_slot(slot_id)
+        suffix = normalized.removeprefix("preview")
+        if suffix and suffix.isdigit():
+            return suffix
+        raise ValueError(f"invalid_slot_suffix:{slot_id}")
+
+    def _preview_web_root_for_slot(self, slot_id: str) -> Path:
+        suffix = self._slot_suffix(slot_id)
+        template = self._preview_web_root_template()
+        resolved = template.replace("{slot}", suffix).replace("{slot_id}", slot_id)
+        return Path(resolved).expanduser().resolve()
+
+    def _run_publish_command(
+        self,
+        *,
+        command: list[str],
+        cwd: Path,
+        timeout_seconds: int,
+        env: dict[str, str],
+        log_handle,
+    ) -> str | None:
+        command_text = " ".join(shlex.quote(part) for part in command)
+        log_handle.write(f"$ {command_text}\n")
+        log_handle.flush()
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=str(cwd),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_seconds,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            log_handle.write(f"[error] command timeout after {timeout_seconds}s: {command_text}\n")
+            log_handle.flush()
+            return f"preview_publish_timeout:{command_text}"
+
+        if proc.stdout:
+            log_handle.write(proc.stdout)
+        if proc.stderr:
+            log_handle.write(proc.stderr)
+        log_handle.flush()
+
+        if proc.returncode != 0:
+            return f"preview_publish_command_failed:{command_text}:exit_{proc.returncode}"
+        return None
+
+    def _publish_preview_surface(
+        self,
+        *,
+        db,
+        run: Run,
+        claimed: ClaimedRun,
+        trace_id: str | None,
+    ) -> PreviewPublishResult:
+        started_at = utcnow()
+        log_path = self.artifact_root / run.id / "preview.publish.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        frontend_root = claimed.worktree_path / "frontend"
+        dist_root = frontend_root / "dist"
+        web_root = self._preview_web_root_for_slot(claimed.slot_id)
+        timeout_seconds = self._preview_publish_timeout_seconds()
+        artifact_uri = str(log_path)
+
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="preview_publish_started",
+            payload={
+                "source": "worker",
+                "slot_id": claimed.slot_id,
+                "worktree_path": str(claimed.worktree_path),
+                "frontend_root": str(frontend_root),
+                "web_root": str(web_root),
+                "trace_id": trace_id,
+            },
+            actor_id=run.created_by,
+            audit_action="run.preview.publish_started",
+        )
+
+        publish_error: str | None = None
+        file_count = 0
+
+        with log_path.open("w", encoding="utf-8") as log_handle:
+            log_handle.write(f"run_id={run.id}\n")
+            log_handle.write(f"slot_id={claimed.slot_id}\n")
+            log_handle.write(f"worktree_path={claimed.worktree_path}\n")
+            log_handle.write(f"frontend_root={frontend_root}\n")
+            log_handle.write(f"web_root={web_root}\n")
+            log_handle.write(f"timeout_seconds={timeout_seconds}\n\n")
+            log_handle.flush()
+
+            npm_bin = shutil.which("npm")
+            if not npm_bin:
+                publish_error = "preview_publish_missing_npm"
+            elif not frontend_root.exists() or not frontend_root.is_dir():
+                publish_error = f"preview_publish_frontend_root_missing:{frontend_root}"
+            elif not (frontend_root / "package.json").exists():
+                publish_error = f"preview_publish_package_json_missing:{frontend_root / 'package.json'}"
+            else:
+                command_env = {
+                    **os.environ,
+                    **self._build_execution_env(
+                        trace_id=trace_id,
+                        run_id=run.id,
+                        slot_id=claimed.slot_id,
+                        commit_sha=run.commit_sha,
+                        check_name="preview_publish",
+                    ),
+                }
+                if not (frontend_root / "node_modules").exists():
+                    install_error = self._run_publish_command(
+                        command=[npm_bin, "ci", "--no-audit", "--no-fund"],
+                        cwd=frontend_root,
+                        timeout_seconds=timeout_seconds,
+                        env=command_env,
+                        log_handle=log_handle,
+                    )
+                    if install_error:
+                        publish_error = install_error
+                else:
+                    log_handle.write("[info] npm install skipped (node_modules already present)\n")
+                    log_handle.flush()
+
+                if not publish_error:
+                    build_error = self._run_publish_command(
+                        command=[npm_bin, "run", "build"],
+                        cwd=frontend_root,
+                        timeout_seconds=timeout_seconds,
+                        env=command_env,
+                        log_handle=log_handle,
+                    )
+                    if build_error:
+                        publish_error = build_error
+
+                if not publish_error:
+                    if not dist_root.exists() or not dist_root.is_dir():
+                        publish_error = f"preview_publish_dist_missing:{dist_root}"
+                    else:
+                        if web_root.exists():
+                            shutil.rmtree(web_root)
+                        shutil.copytree(dist_root, web_root)
+                        file_count = sum(1 for path in web_root.rglob("*") if path.is_file())
+                        log_handle.write(f"[info] copied {file_count} files into {web_root}\n")
+                        log_handle.flush()
+
+        ended_at = utcnow()
+        db.add(
+            RunArtifact(
+                run_id=run.id,
+                artifact_type="preview_publish_log",
+                artifact_uri=artifact_uri,
+                metadata_json={
+                    "slot_id": claimed.slot_id,
+                    "frontend_root": str(frontend_root),
+                    "dist_root": str(dist_root),
+                    "web_root": str(web_root),
+                    "file_count": file_count,
+                    "status": "failed" if publish_error else "passed",
+                    "trace_id": trace_id,
+                },
+            )
+        )
+
+        duration_seconds = max(0.0, (ended_at - started_at).total_seconds())
+        if publish_error:
+            append_run_event(
+                db,
+                run_id=run.id,
+                event_type="preview_publish_failed",
+                payload={
+                    "source": "worker",
+                    "slot_id": claimed.slot_id,
+                    "worktree_path": str(claimed.worktree_path),
+                    "frontend_root": str(frontend_root),
+                    "dist_root": str(dist_root),
+                    "web_root": str(web_root),
+                    "artifact_uri": artifact_uri,
+                    "duration_seconds": duration_seconds,
+                    "error": publish_error,
+                    "trace_id": trace_id,
+                },
+                actor_id=run.created_by,
+                audit_action="run.preview.publish_failed",
+            )
+            emit_worker_log(
+                event="preview_publish_failed",
+                level=logging.WARNING,
+                trace_id=trace_id,
+                run_id=run.id,
+                slot_id=claimed.slot_id,
+                commit_sha=run.commit_sha,
+                web_root=str(web_root),
+                error=publish_error,
+            )
+            return PreviewPublishResult(
+                published=False,
+                web_root_path=str(web_root),
+                dist_path=str(dist_root),
+                log_artifact_uri=artifact_uri,
+                file_count=file_count,
+                error=publish_error,
+            )
+
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="preview_publish_completed",
+            payload={
+                "source": "worker",
+                "slot_id": claimed.slot_id,
+                "worktree_path": str(claimed.worktree_path),
+                "frontend_root": str(frontend_root),
+                "dist_root": str(dist_root),
+                "web_root": str(web_root),
+                "artifact_uri": artifact_uri,
+                "duration_seconds": duration_seconds,
+                "file_count": file_count,
+                "trace_id": trace_id,
+            },
+            actor_id=run.created_by,
+            audit_action="run.preview.publish_completed",
+        )
+        emit_worker_log(
+            event="preview_publish_completed",
+            trace_id=trace_id,
+            run_id=run.id,
+            slot_id=claimed.slot_id,
+            commit_sha=run.commit_sha,
+            web_root=str(web_root),
+            file_count=file_count,
+        )
+        return PreviewPublishResult(
+            published=True,
+            web_root_path=str(web_root),
+            dist_path=str(dist_root),
+            log_artifact_uri=artifact_uri,
+            file_count=file_count,
+            error=None,
         )
 
     def _run_validation_pipeline(
