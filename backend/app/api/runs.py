@@ -42,6 +42,10 @@ class TransitionRunRequest(BaseModel):
     failure_reason_code: FailureReasonCode | None = None
 
 
+class ExpireRunRequest(BaseModel):
+    reason: str | None = None
+
+
 class RunContextResponse(BaseModel):
     route: str | None = None
     page_title: str | None = None
@@ -459,6 +463,78 @@ def cancel_run(run_id: str, db: Session = Depends(get_db_session)) -> RunRespons
         commit_sha=run.commit_sha,
         status_from=status_from,
         status_to=status_to,
+    )
+    return _to_run_response(run, run_context)
+
+
+@router.post("/{run_id}/expire", response_model=RunResponse)
+def expire_run(
+    run_id: str,
+    payload: ExpireRunRequest,
+    db: Session = Depends(get_db_session),
+) -> RunResponse:
+    trace_id = current_trace_id()
+    run = _get_run_or_404(db, run_id)
+    status_from, status_to = _transition_or_409(run, target_state=RunState.EXPIRED)
+
+    cleanup_result: dict[str, Any]
+    lease_release_result: dict[str, Any]
+    if run.slot_id:
+        slot_id = run.slot_id
+        try:
+            cleanup_result = cleanup_worktree(db=db, slot_id=slot_id, run_id=run.id)
+        except ValueError as exc:
+            cleanup_result = {"cleaned": False, "slot_id": slot_id, "run_id": run.id, "reason": str(exc)}
+        lease_release_result = release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
+    else:
+        cleanup_result = {
+            "cleaned": False,
+            "slot_id": None,
+            "run_id": run.id,
+            "reason": "run_slot_not_assigned",
+        }
+        lease_release_result = {
+            "released": False,
+            "slot_id": None,
+            "run_id": run.id,
+            "reason": "run_slot_not_assigned",
+        }
+
+    append_run_event(
+        db,
+        run_id=run.id,
+        event_type="status_transition",
+        status_from=status_from,
+        status_to=status_to,
+        payload={
+            "source": "expire_endpoint",
+            "reason": FailureReasonCode.PREVIEW_EXPIRED.value,
+            "failure_reason_code": FailureReasonCode.PREVIEW_EXPIRED.value,
+            "recoverable": True,
+            "recovery_strategy": "create_child_run",
+            "resume_endpoint": f"/api/runs/{run.id}/resume",
+            "requested_reason": payload.reason,
+            "resource_cleanup": cleanup_result,
+            "lease_release": lease_release_result,
+            "trace_id": trace_id,
+        },
+        actor_id=run.created_by,
+        audit_action="run.preview.expired_manually",
+    )
+
+    db.commit()
+    db.refresh(run)
+    run_context = db.query(RunContext).filter(RunContext.run_id == run.id).first()
+    emit_structured_log(
+        component="api.runs",
+        event="run_expired_manually",
+        trace_id=trace_id,
+        run_id=run.id,
+        slot_id=run.slot_id,
+        commit_sha=run.commit_sha,
+        status_from=status_from,
+        status_to=status_to,
+        reason_code=FailureReasonCode.PREVIEW_EXPIRED.value,
     )
     return _to_run_response(run, run_context)
 
