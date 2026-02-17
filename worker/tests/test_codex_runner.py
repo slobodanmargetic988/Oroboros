@@ -27,7 +27,8 @@ class BuildCodexCommandTests(unittest.TestCase):
             else:
                 os.environ["WORKER_CODEX_COMMAND_TEMPLATE"] = previous
 
-        self.assertEqual(command[:3], ["codex", "run", "--cwd"])
+        self.assertEqual(Path(command[0]).name, "codex")
+        self.assertEqual(command[1:3], ["run", "--cwd"])
         self.assertIn("/tmp/example", command)
         self.assertIn("hello world", command)
 
