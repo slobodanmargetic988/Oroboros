@@ -1,5 +1,9 @@
 <template>
   <div class="codex-page" role="main">
+    <div class="codex-bg-art" aria-hidden="true">
+      <img src="/Ouroboros.png" alt="" />
+    </div>
+
     <header class="hero">
       <p class="eyebrow">Ouroboros</p>
       <h1>Codex Runs Inbox</h1>
@@ -583,26 +587,37 @@ onUnmounted(() => {
   gap: 1.2rem;
 }
 
-.codex-page::before {
-  content: "";
+.codex-bg-art {
   position: fixed;
-  top: 5.2rem;
+  top: 50%;
   left: 50%;
-  width: 100vw;
-  height: 78vh;
-  transform: translateX(-50%);
-  background-image: url("/Ouroboros.png");
-  background-repeat: no-repeat;
-  background-position: center top;
-  background-size: 100% auto;
-  opacity: 0.26;
+  transform: translate(-50%, -50%);
   z-index: 0;
   pointer-events: none;
 }
 
-.codex-page > * {
+.codex-bg-art img {
+  display: block;
+  width: 130vw;
+  max-width: none;
+  height: auto;
+  opacity: 0.26;
+  transform-origin: center center;
+  animation: codex-spin 6s linear infinite;
+}
+
+.codex-page > :not(.codex-bg-art) {
   position: relative;
   z-index: 1;
+}
+
+@keyframes codex-spin {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
 }
 
 .hero {
@@ -967,9 +982,7 @@ button:disabled {
 }
 
 @media (max-width: 800px) {
-  .codex-page::before {
-    top: 4.4rem;
-    height: 72vh;
+  .codex-bg-art img {
     opacity: 0.22;
   }
 
