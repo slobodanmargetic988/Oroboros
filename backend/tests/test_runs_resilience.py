@@ -16,7 +16,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
 
-from app.api.runs import cancel_run, resume_run, retry_run
+from app.api.runs import ExpireRunRequest, cancel_run, expire_run, resume_run, retry_run
 from app.db.base import Base
 from app.models import Run, RunContext, RunEvent
 
@@ -101,6 +101,32 @@ class RunResilienceApiTests(unittest.TestCase):
             )
             self.assertIsNotNone(retried_event)
             self.assertEqual(retried_event.payload.get("parent_run_id"), run_id)
+
+    def test_expire_records_preview_expired_recoverable_metadata(self) -> None:
+        run_id = self._create_run(status="preview_ready", slot_id="preview-1")
+        with self.session_factory() as db, patch(
+            "app.api.runs.cleanup_worktree",
+            return_value={"cleaned": True, "slot_id": "preview-1", "run_id": run_id, "reason": None},
+        ) as cleanup_mock, patch(
+            "app.api.runs.release_slot_lease",
+            return_value={"released": True, "slot_id": "preview-1", "run_id": run_id, "reason": None},
+        ) as release_mock:
+            response = expire_run(run_id, ExpireRunRequest(reason="manual"), db)
+            self.assertEqual(response.status, "expired")
+            cleanup_mock.assert_called_once_with(db=db, slot_id="preview-1", run_id=run_id)
+            release_mock.assert_called_once_with(db=db, slot_id="preview-1", run_id=run_id)
+
+            event = (
+                db.query(RunEvent)
+                .filter(RunEvent.run_id == run_id, RunEvent.event_type == "status_transition", RunEvent.status_to == "expired")
+                .order_by(RunEvent.id.desc())
+                .first()
+            )
+            self.assertIsNotNone(event)
+            self.assertEqual(event.payload.get("reason"), "PREVIEW_EXPIRED")
+            self.assertEqual(event.payload.get("failure_reason_code"), "PREVIEW_EXPIRED")
+            self.assertTrue(event.payload.get("recoverable"))
+            self.assertEqual(event.payload.get("resume_endpoint"), f"/api/runs/{run_id}/resume")
 
     def test_resume_creates_child_for_timeout_failures(self) -> None:
         run_id = self._create_run(status="failed")

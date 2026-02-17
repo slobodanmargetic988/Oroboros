@@ -9,7 +9,21 @@
       <RouterLink class="back-link" to="/codex">Back to Inbox</RouterLink>
     </header>
 
-    <section class="panel">
+    <section class="details-nav panel" aria-label="Run details sections">
+      <nav class="details-nav-links">
+        <button
+          v-for="section in sectionLinks"
+          :key="section.id"
+          type="button"
+          :class="['details-nav-btn', activeSectionId === section.id ? 'details-nav-btn-active' : '']"
+          @click="scrollToSection(section.id)"
+        >
+          {{ section.label }}
+        </button>
+      </nav>
+    </section>
+
+    <section id="summary" class="panel">
       <div class="panel-head">
         <h2>Run Summary</h2>
         <button type="button" :disabled="loading" aria-keyshortcuts="Alt+R" @click="refreshDetails">
@@ -41,7 +55,7 @@
       <p v-else-if="!loading" class="empty">Run details are unavailable.</p>
     </section>
 
-    <section class="panel">
+    <section id="change-review" class="panel">
       <h2>Change Review</h2>
       <div class="review-grid">
         <div>
@@ -81,7 +95,7 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section id="failure-reasons" class="panel">
       <h2>Failure Reasons</h2>
       <ul v-if="failureReasons.length" class="failure-list">
         <li v-for="reason in failureReasons" :key="reason">{{ reason }}</li>
@@ -89,7 +103,7 @@
       <p v-else class="empty">No failure reasons recorded for this run.</p>
     </section>
 
-    <section class="panel">
+    <section id="checks-summary" class="panel">
       <h2>Checks Summary</h2>
       <div class="checks-summary-row">
         <span class="summary-chip summary-chip-neutral">Total {{ checksSummary.total }}</span>
@@ -100,7 +114,7 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section id="validation-checks" class="panel">
       <h2>Validation Checks</h2>
       <ul v-if="checks.length" class="checks-list">
         <li v-for="check in checks" :key="check.id" class="check-item">
@@ -121,8 +135,25 @@
       <p v-else class="empty">No validation checks found for this run.</p>
     </section>
 
-    <section class="panel">
+    <section id="lifecycle-actions" class="panel">
       <h2>Approval Actions</h2>
+      <div class="lifecycle-action-grid">
+        <label>
+          Expire reason (optional)
+          <input v-model="expireReason" type="text" placeholder="Reason for manual expiration" />
+        </label>
+      </div>
+      <div class="decision-actions">
+        <button class="btn-expire" type="button" :disabled="!canExpireRun || actionBusy" @click="expireRun">
+          {{ actionBusy ? "Submitting..." : "Expire Run" }}
+        </button>
+        <button class="btn-resume" type="button" :disabled="!canResumeRun || actionBusy" @click="resumeRun">
+          {{ actionBusy ? "Submitting..." : "Resume Run" }}
+        </button>
+      </div>
+      <p class="lifecycle-hint">
+        Expire writes recoverable reason <code>PREVIEW_EXPIRED</code> and resume creates a queued child run.
+      </p>
       <p class="approval-status">
         Current run status:
         <strong>{{ run?.status ?? "unknown" }}</strong>
@@ -179,7 +210,7 @@
       <p v-else class="empty">No approvals/rejections recorded for this run yet.</p>
     </section>
 
-    <section class="panel">
+    <section id="artifacts" class="panel">
       <h2>Artifact Links</h2>
       <ul v-if="artifactLinks.length" class="artifact-list">
         <li v-for="artifact in artifactLinks" :key="`${artifact.source}:${artifact.uri}`">
@@ -190,7 +221,7 @@
       <p v-else class="empty">No artifact links available for this run.</p>
     </section>
 
-    <section class="panel">
+    <section id="timeline" class="panel">
       <h2>Timeline</h2>
       <ol v-if="events.length" class="timeline">
         <li v-for="event in events" :key="event.id">
@@ -211,8 +242,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import {
   extractArtifactLinks,
@@ -238,6 +269,7 @@ interface ApprovalItem {
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 const route = useRoute();
+const router = useRouter();
 const run = ref<RunItem | null>(null);
 const events = ref<RunEventItem[]>([]);
 const checks = ref<ValidationCheckItem[]>([]);
@@ -249,10 +281,12 @@ const lastSync = ref<Date | null>(null);
 const reviewerId = ref("");
 const approveReason = ref("");
 const rejectReason = ref("");
+const expireReason = ref("");
 const rejectFailureReasonCode = ref("POLICY_REJECTED");
 const actionBusy = ref(false);
 const actionError = ref("");
 const actionSuccess = ref("");
+const activeSectionId = ref("summary");
 
 const failureReasonCodes = [
   "WAITING_FOR_SLOT",
@@ -269,6 +303,7 @@ const failureReasonCodes = [
 ];
 
 let pollHandle: ReturnType<typeof setInterval> | null = null;
+let sectionObserver: IntersectionObserver | null = null;
 
 const runId = computed(() => String(route.params.runId ?? ""));
 const artifactLinks = computed(() => extractArtifactLinks(checks.value, events.value));
@@ -283,7 +318,26 @@ const migrationFiles = computed(() => {
 });
 const checksSummary = computed(() => summarizeChecks(checks.value));
 const canSubmitDecision = computed(() => run.value?.status === "needs_approval");
+const canExpireRun = computed(() =>
+  Boolean(
+    run.value &&
+      ["queued", "planning", "editing", "testing", "preview_ready", "needs_approval", "approved"].includes(
+        run.value.status,
+      ),
+  ),
+);
+const canResumeRun = computed(() => Boolean(run.value && ["failed", "expired"].includes(run.value.status)));
 const lastSyncLabel = computed(() => (lastSync.value ? lastSync.value.toLocaleTimeString() : "not yet"));
+const sectionLinks = [
+  { id: "summary", label: "Summary" },
+  { id: "change-review", label: "Change Review" },
+  { id: "failure-reasons", label: "Failures" },
+  { id: "checks-summary", label: "Checks" },
+  { id: "validation-checks", label: "Validation" },
+  { id: "lifecycle-actions", label: "Actions" },
+  { id: "artifacts", label: "Artifacts" },
+  { id: "timeline", label: "Timeline" },
+];
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
@@ -459,6 +513,114 @@ async function rejectRun() {
   }
 }
 
+async function expireRun() {
+  if (!run.value) {
+    return;
+  }
+
+  actionError.value = "";
+  actionSuccess.value = "";
+
+  if (!canExpireRun.value) {
+    actionError.value = "Run cannot be manually expired in current state.";
+    return;
+  }
+
+  if (!window.confirm("Expire this run with recoverable reason PREVIEW_EXPIRED?")) {
+    return;
+  }
+
+  actionBusy.value = true;
+  try {
+    await postJson<RunItem>(`${apiBaseUrl}/api/runs/${run.value.id}/expire`, {
+      reason: expireReason.value.trim() || undefined,
+    });
+    actionSuccess.value = "Run expired with PREVIEW_EXPIRED recoverable reason.";
+    await refreshDetails({ silent: true });
+  } catch (error) {
+    actionError.value = (error as Error).message;
+  } finally {
+    actionBusy.value = false;
+  }
+}
+
+async function resumeRun() {
+  if (!run.value) {
+    return;
+  }
+
+  actionError.value = "";
+  actionSuccess.value = "";
+
+  if (!canResumeRun.value) {
+    actionError.value = "Run must be failed or expired before resuming.";
+    return;
+  }
+
+  if (!window.confirm("Resume this run by creating a recoverable child run?")) {
+    return;
+  }
+
+  actionBusy.value = true;
+  try {
+    const child = await postJson<RunItem>(`${apiBaseUrl}/api/runs/${run.value.id}/resume`, {});
+    actionSuccess.value = `Child run queued: ${child.id}`;
+    await router.push(`/codex/runs/${child.id}`);
+    await refreshDetails();
+  } catch (error) {
+    actionError.value = (error as Error).message;
+  } finally {
+    actionBusy.value = false;
+  }
+}
+
+function scrollToSection(sectionId: string): void {
+  const node = document.getElementById(sectionId);
+  if (!node) {
+    return;
+  }
+  activeSectionId.value = sectionId;
+  node.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function setupSectionObserver(): Promise<void> {
+  await nextTick();
+  if (sectionObserver) {
+    sectionObserver.disconnect();
+    sectionObserver = null;
+  }
+  if (typeof window === "undefined" || !("IntersectionObserver" in window)) {
+    return;
+  }
+
+  sectionObserver = new IntersectionObserver(
+    (entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+      if (!visible.length) {
+        return;
+      }
+      const sectionId = visible[0]?.target?.id;
+      if (sectionId) {
+        activeSectionId.value = sectionId;
+      }
+    },
+    {
+      root: null,
+      rootMargin: "-20% 0px -65% 0px",
+      threshold: [0.1, 0.25, 0.5, 0.75],
+    },
+  );
+
+  sectionLinks.forEach((section) => {
+    const node = document.getElementById(section.id);
+    if (node) {
+      sectionObserver?.observe(node);
+    }
+  });
+}
+
 function isTypingTarget(event: KeyboardEvent): boolean {
   const target = event.target as HTMLElement | null;
   if (!target) {
@@ -480,10 +642,12 @@ async function handleDetailsHotkeys(event: KeyboardEvent) {
 
 watch(runId, () => {
   void refreshDetails();
+  void setupSectionObserver();
 });
 
 onMounted(() => {
   void refreshDetails();
+  void setupSectionObserver();
   pollHandle = setInterval(() => {
     void refreshDetails({ silent: true });
   }, 5000);
@@ -493,6 +657,10 @@ onMounted(() => {
 onUnmounted(() => {
   if (pollHandle) {
     clearInterval(pollHandle);
+  }
+  if (sectionObserver) {
+    sectionObserver.disconnect();
+    sectionObserver = null;
   }
   window.removeEventListener("keydown", handleDetailsHotkeys);
 });
@@ -554,6 +722,31 @@ onUnmounted(() => {
 .panel h3 {
   margin: 0.35rem 0 0.6rem;
   font-size: 0.95rem;
+}
+
+.details-nav {
+  position: sticky;
+  top: 0.75rem;
+  z-index: 10;
+}
+
+.details-nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.details-nav-btn {
+  background: #e2e8f0;
+  color: #1e293b;
+  border: 1px solid #cbd5e1;
+  padding: 0.42rem 0.66rem;
+}
+
+.details-nav-btn-active {
+  background: #0f766e;
+  color: #f8fafc;
+  border-color: #0f766e;
 }
 
 .panel-head {
@@ -782,6 +975,38 @@ button:disabled {
 
 .btn-reject {
   background: #b91c1c;
+}
+
+.btn-expire {
+  background: #9f1239;
+}
+
+.btn-resume {
+  background: #1d4ed8;
+}
+
+.lifecycle-action-grid {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+}
+
+.lifecycle-action-grid label {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.lifecycle-action-grid input {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  background: #f8fafc;
+}
+
+.lifecycle-hint {
+  margin: 0.65rem 0 0;
+  color: #475569;
+  font-size: 0.84rem;
 }
 
 .approval-reason {
