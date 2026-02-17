@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.domain.run_state_machine import RunState, TransitionRuleError, ensure_transition_allowed
 from app.models import Run, RunEvent, SlotLease
 
 
@@ -42,11 +43,15 @@ def _add_run_event(
     run_id: str,
     event_type: str,
     payload: dict[str, Any] | None = None,
+    status_from: str | None = None,
+    status_to: str | None = None,
 ) -> None:
     db.add(
         RunEvent(
             run_id=run_id,
             event_type=event_type,
+            status_from=status_from,
+            status_to=status_to,
             payload=payload,
         )
     )
@@ -69,6 +74,87 @@ def _load_slot_lease_map(db: Session, slot_ids: list[str]) -> dict[str, SlotLeas
     return {lease.slot_id: lease for lease in leases}
 
 
+def _mark_run_expired_for_slot_ttl(
+    db: Session,
+    *,
+    run: Run,
+    slot_id: str,
+    source: str,
+) -> None:
+    try:
+        current_state = RunState(run.status)
+    except ValueError:
+        _add_run_event(
+            db,
+            run_id=run.id,
+            event_type="slot_expiry_transition_skipped",
+            payload={
+                "slot_id": slot_id,
+                "source": source,
+                "run_status": run.status,
+                "reason": "unknown_run_status",
+            },
+        )
+        return
+    if current_state == RunState.EXPIRED:
+        return
+
+    try:
+        ensure_transition_allowed(current_state, RunState.EXPIRED)
+    except TransitionRuleError:
+        _add_run_event(
+            db,
+            run_id=run.id,
+            event_type="slot_expiry_transition_skipped",
+            payload={
+                "slot_id": slot_id,
+                "source": source,
+                "run_status": run.status,
+                "reason": "invalid_transition",
+            },
+        )
+        return
+
+    run.status = RunState.EXPIRED.value
+    _add_run_event(
+        db,
+        run_id=run.id,
+        event_type="status_transition",
+        status_from=current_state.value,
+        status_to=RunState.EXPIRED.value,
+        payload={
+            "source": source,
+            "reason": "PREVIEW_EXPIRED",
+            "failure_reason_code": "PREVIEW_EXPIRED",
+            "recoverable": True,
+            "recovery_strategy": "create_child_run",
+            "resume_endpoint": f"/api/runs/{run.id}/resume",
+            "slot_id": slot_id,
+        },
+    )
+
+
+def _expire_lease_and_link_run(db: Session, *, lease: SlotLease, now: datetime, source: str) -> None:
+    lease.lease_state = "expired"
+    lease.heartbeat_at = now
+
+    run = db.query(Run).filter(Run.id == lease.run_id).first()
+    if run is not None and run.slot_id == lease.slot_id:
+        run.slot_id = None
+        _mark_run_expired_for_slot_ttl(db, run=run, slot_id=lease.slot_id, source=source)
+
+    _add_run_event(
+        db,
+        run_id=lease.run_id,
+        event_type="slot_expired",
+        payload={
+            "slot_id": lease.slot_id,
+            "reason": "PREVIEW_EXPIRED",
+            "source": source,
+        },
+    )
+
+
 def acquire_slot_lease(db: Session, run_id: str) -> dict[str, Any]:
     run = _get_run_or_raise(db, run_id)
 
@@ -78,6 +164,11 @@ def acquire_slot_lease(db: Session, run_id: str) -> dict[str, Any]:
     slot_ids = _configured_slot_ids()
 
     lease_map = _load_slot_lease_map(db, slot_ids)
+
+    for lease in lease_map.values():
+        lease_expires = _normalize_utc(lease.expires_at)
+        if lease.lease_state == "leased" and lease_expires <= now:
+            _expire_lease_and_link_run(db, lease=lease, now=now, source="slot_acquire_ttl_reaper")
 
     # Idempotent acquire if run already has active lease.
     for lease in lease_map.values():
@@ -219,11 +310,7 @@ def heartbeat_slot_lease(db: Session, slot_id: str, run_id: str) -> dict[str, An
     lease_expires = _normalize_utc(lease.expires_at)
 
     if lease.lease_state != "leased" or lease_expires <= now:
-        lease.lease_state = "expired"
-        run = db.query(Run).filter(Run.id == run_id).first()
-        if run is not None and run.slot_id == slot_id:
-            run.slot_id = None
-
+        _expire_lease_and_link_run(db, lease=lease, now=now, source="slot_heartbeat")
         _add_run_event(
             db,
             run_id=run_id,
@@ -273,19 +360,7 @@ def reap_expired_slot_leases(db: Session) -> dict[str, Any]:
         if _normalize_utc(lease.expires_at) > now:
             continue
 
-        lease.lease_state = "expired"
-        lease.heartbeat_at = now
-
-        run = db.query(Run).filter(Run.id == lease.run_id).first()
-        if run is not None and run.slot_id == lease.slot_id:
-            run.slot_id = None
-
-        _add_run_event(
-            db,
-            run_id=lease.run_id,
-            event_type="slot_expired",
-            payload={"slot_id": lease.slot_id, "reason": "PREVIEW_EXPIRED"},
-        )
+        _expire_lease_and_link_run(db, lease=lease, now=now, source="slot_reaper")
 
         expired_count += 1
         expired_slots.append(lease.slot_id)
