@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 import shlex
@@ -138,6 +139,26 @@ def _build_subprocess_env(env_overlay: dict[str, str] | None) -> dict[str, str]:
     return env
 
 
+def _resolve_codex_binary() -> str:
+    configured = os.getenv("WORKER_CODEX_BIN", "").strip()
+    if configured:
+        return configured
+
+    discovered = shutil.which("codex")
+    if discovered:
+        return discovered
+
+    common_paths = [
+        "/Applications/Codex.app/Contents/Resources/codex",
+    ]
+    for raw in common_paths:
+        candidate = Path(raw).expanduser()
+        if candidate.exists() and os.access(candidate, os.X_OK):
+            return str(candidate)
+
+    return "codex"
+
+
 def build_codex_command(prompt: str, worktree_path: Path) -> list[str]:
     template = os.getenv("WORKER_CODEX_COMMAND_TEMPLATE")
     if template:
@@ -149,7 +170,7 @@ def build_codex_command(prompt: str, worktree_path: Path) -> list[str]:
         if command:
             return command
 
-    binary = os.getenv("WORKER_CODEX_BIN", "codex")
+    binary = _resolve_codex_binary()
     args = shlex.split(os.getenv("WORKER_CODEX_ARGS", ""))
     return [binary, *args, prompt]
 
