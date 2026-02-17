@@ -137,61 +137,29 @@
 
     <section id="lifecycle-actions" class="panel">
       <h2>Approval Actions</h2>
-      <div class="lifecycle-action-grid">
-        <label>
-          Expire reason (optional)
-          <input v-model="expireReason" type="text" placeholder="Reason for manual expiration" />
-        </label>
-      </div>
       <div class="decision-actions">
-        <button class="btn-expire" type="button" :disabled="!canExpireRun || actionBusy" @click="expireRun">
+        <button class="btn-approve" type="button" :disabled="!canApproveRun || actionBusy" @click="openActionModal('approve')">
+          {{ actionBusy ? "Submitting..." : "Approve Run" }}
+        </button>
+        <button class="btn-reject" type="button" :disabled="!canRejectRun || actionBusy" @click="openActionModal('reject')">
+          {{ actionBusy ? "Submitting..." : "Reject Run" }}
+        </button>
+        <button class="btn-expire" type="button" :disabled="!canExpireRun || actionBusy" @click="openActionModal('expire')">
           {{ actionBusy ? "Submitting..." : "Expire Run" }}
         </button>
-        <button class="btn-resume" type="button" :disabled="!canResumeRun || actionBusy" @click="resumeRun">
+        <button class="btn-resume" type="button" :disabled="!canResumeRun || actionBusy" @click="openActionModal('resume')">
           {{ actionBusy ? "Submitting..." : "Resume Run" }}
         </button>
       </div>
-      <p class="lifecycle-hint">
-        Expire writes recoverable reason <code>PREVIEW_EXPIRED</code> and resume creates a queued child run.
-      </p>
       <p class="approval-status">
-        Current run status:
-        <strong>{{ run?.status ?? "unknown" }}</strong>
-        <span v-if="!canSubmitDecision"> (Approve/Reject enabled only in <code>needs_approval</code>.)</span>
+        Current run status: <strong>{{ run?.status ?? "unknown" }}</strong>
       </p>
-
-      <div class="approval-form-grid">
-        <label>
-          Reviewer ID (optional)
-          <input v-model="reviewerId" type="text" placeholder="reviewer user id" />
-        </label>
-
-        <label>
-          Approve reason (optional)
-          <textarea v-model="approveReason" rows="2" placeholder="Reason for approval" />
-        </label>
-
-        <label>
-          Reject reason (required for reject)
-          <textarea v-model="rejectReason" rows="2" placeholder="Reason for rejection" />
-        </label>
-
-        <label>
-          Failure reason code
-          <select v-model="rejectFailureReasonCode">
-            <option v-for="code in failureReasonCodes" :key="code" :value="code">{{ code }}</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="decision-actions">
-        <button class="btn-approve" type="button" :disabled="!canSubmitDecision || actionBusy" @click="approveRun">
-          {{ actionBusy ? "Submitting..." : "Approve Run" }}
-        </button>
-        <button class="btn-reject" type="button" :disabled="!canSubmitDecision || actionBusy" @click="rejectRun">
-          {{ actionBusy ? "Submitting..." : "Reject Run" }}
-        </button>
-      </div>
+      <p class="lifecycle-hint">
+        Approve is available in <code>preview_ready</code> and <code>needs_approval</code>. Reject is available in any loaded state.
+      </p>
+      <p class="lifecycle-hint">
+        Decision History records approve/reject actions. Expire/resume appear in Timeline events.
+      </p>
 
       <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
       <p v-if="actionSuccess" class="success" role="status">{{ actionSuccess }}</p>
@@ -209,6 +177,113 @@
       </ul>
       <p v-else class="empty">No approvals/rejections recorded for this run yet.</p>
     </section>
+
+    <div
+      v-if="activeActionModal"
+      class="action-modal-overlay"
+      role="presentation"
+      @click.self="closeActionModal"
+      @keydown="handleModalKeydown"
+    >
+      <section
+        ref="modalDialogRef"
+        :class="['action-modal', `action-modal-${activeActionModal}`]"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="action-modal-title"
+      >
+        <div class="action-modal-head">
+          <h3 id="action-modal-title">{{ actionModalTitle }}</h3>
+          <button class="btn-modal-close" type="button" :disabled="actionBusy" aria-label="Close dialog" @click="closeActionModal">
+            Close
+          </button>
+        </div>
+
+        <p class="action-modal-subhead">{{ actionModalSubhead }}</p>
+
+        <div v-if="activeActionModal === 'approve'" class="action-modal-grid">
+          <label>
+            Reviewer ID (optional)
+            <input v-model="reviewerId" data-autofocus type="text" placeholder="reviewer user id" />
+          </label>
+          <label>
+            Approve reason (optional)
+            <textarea v-model="approveReason" rows="2" placeholder="Reason for approval" />
+          </label>
+        </div>
+
+        <div v-if="activeActionModal === 'reject'" class="action-modal-grid">
+          <label>
+            Reviewer ID (optional)
+            <input v-model="reviewerId" data-autofocus type="text" placeholder="reviewer user id" />
+          </label>
+          <label>
+            Reject reason (required)
+            <textarea v-model="rejectReason" rows="2" placeholder="Reason for rejection" />
+          </label>
+          <label>
+            Failure reason code
+            <select v-model="rejectFailureReasonCode">
+              <option v-for="code in failureReasonCodes" :key="code" :value="code">{{ code }}</option>
+            </select>
+          </label>
+        </div>
+
+        <div v-if="activeActionModal === 'expire'" class="action-modal-grid">
+          <label>
+            Expire reason (optional)
+            <input v-model="expireReason" data-autofocus type="text" placeholder="Reason for manual expiration" />
+          </label>
+        </div>
+
+        <div v-if="activeActionModal === 'resume'" class="action-modal-grid">
+          <p class="lifecycle-hint">This creates a queued child run from the current failed/expired run.</p>
+        </div>
+
+        <p v-if="modalError" class="error" role="alert">{{ modalError }}</p>
+        <p v-if="modalSuccess" class="success" role="status">{{ modalSuccess }}</p>
+
+        <div class="action-modal-actions">
+          <button class="btn-secondary" type="button" :disabled="actionBusy" @click="closeActionModal">Cancel</button>
+          <button
+            v-if="activeActionModal === 'approve'"
+            class="btn-approve"
+            type="button"
+            :disabled="!canApproveRun || actionBusy"
+            @click="approveRun"
+          >
+            {{ actionBusy ? "Submitting..." : "Approve Run" }}
+          </button>
+          <button
+            v-if="activeActionModal === 'reject'"
+            class="btn-reject"
+            type="button"
+            :disabled="!canRejectRun || actionBusy"
+            @click="rejectRun"
+          >
+            {{ actionBusy ? "Submitting..." : "Reject Run" }}
+          </button>
+          <button
+            v-if="activeActionModal === 'expire'"
+            class="btn-expire"
+            type="button"
+            :disabled="!canExpireRun || actionBusy"
+            @click="expireRun"
+          >
+            {{ actionBusy ? "Submitting..." : "Expire Run" }}
+          </button>
+          <button
+            v-if="activeActionModal === 'resume'"
+            class="btn-resume"
+            type="button"
+            :disabled="!canResumeRun || actionBusy"
+            @click="resumeRun"
+          >
+            {{ actionBusy ? "Submitting..." : "Resume Run" }}
+          </button>
+        </div>
+      </section>
+    </div>
 
     <section id="artifacts" class="panel">
       <h2>Artifact Links</h2>
@@ -233,7 +308,10 @@
             <span>From: {{ event.status_from || "-" }}</span>
             <span>To: {{ event.status_to || "-" }}</span>
           </div>
-          <pre v-if="event.payload" class="event-payload">{{ stringifyPayload(event.payload) }}</pre>
+          <details v-if="event.payload" class="event-payload-details">
+            <summary>Show payload JSON</summary>
+            <pre class="event-payload">{{ stringifyPayload(event.payload) }}</pre>
+          </details>
         </li>
       </ol>
       <p v-else class="empty">No timeline events found for this run.</p>
@@ -266,6 +344,8 @@ interface ApprovalItem {
   created_at: string;
 }
 
+type ActionModalName = "approve" | "reject" | "expire" | "resume";
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 const route = useRoute();
@@ -286,6 +366,11 @@ const rejectFailureReasonCode = ref("POLICY_REJECTED");
 const actionBusy = ref(false);
 const actionError = ref("");
 const actionSuccess = ref("");
+const modalError = ref("");
+const modalSuccess = ref("");
+const activeActionModal = ref<ActionModalName | null>(null);
+const modalDialogRef = ref<HTMLElement | null>(null);
+const modalLastFocused = ref<HTMLElement | null>(null);
 const activeSectionId = ref("summary");
 
 const failureReasonCodes = [
@@ -318,7 +403,8 @@ const migrationFiles = computed(() => {
   return [...new Set(paths)];
 });
 const checksSummary = computed(() => summarizeChecks(checks.value));
-const canSubmitDecision = computed(() => run.value?.status === "needs_approval");
+const canApproveRun = computed(() => Boolean(run.value && ["preview_ready", "needs_approval"].includes(run.value.status)));
+const canRejectRun = computed(() => Boolean(run.value));
 const canExpireRun = computed(() =>
   Boolean(
     run.value &&
@@ -329,6 +415,36 @@ const canExpireRun = computed(() =>
 );
 const canResumeRun = computed(() => Boolean(run.value && ["failed", "expired"].includes(run.value.status)));
 const lastSyncLabel = computed(() => (lastSync.value ? lastSync.value.toLocaleTimeString() : "not yet"));
+const actionModalTitle = computed(() => {
+  if (activeActionModal.value === "approve") {
+    return "Approve Run";
+  }
+  if (activeActionModal.value === "reject") {
+    return "Reject Run";
+  }
+  if (activeActionModal.value === "expire") {
+    return "Expire Run";
+  }
+  if (activeActionModal.value === "resume") {
+    return "Resume Run";
+  }
+  return "Run Action";
+});
+const actionModalSubhead = computed(() => {
+  if (activeActionModal.value === "approve") {
+    return "Approving will continue merge/deploy pipeline checks for this run.";
+  }
+  if (activeActionModal.value === "reject") {
+    return "Rejecting records a decision and applies the selected failure reason code.";
+  }
+  if (activeActionModal.value === "expire") {
+    return "Expire sets recoverable reason code PREVIEW_EXPIRED.";
+  }
+  if (activeActionModal.value === "resume") {
+    return "Resume creates a queued child run from this failed/expired run.";
+  }
+  return "";
+});
 const sectionLinks = [
   { id: "summary", label: "Summary" },
   { id: "change-review", label: "Change Review" },
@@ -450,20 +566,121 @@ async function refreshDetails(options?: { silent?: boolean }) {
   }
 }
 
+function resetActionFeedback(): void {
+  actionError.value = "";
+  actionSuccess.value = "";
+  modalError.value = "";
+  modalSuccess.value = "";
+}
+
+function setActionError(message: string): void {
+  actionError.value = message;
+  modalError.value = message;
+}
+
+function setActionSuccess(message: string): void {
+  actionSuccess.value = message;
+  modalSuccess.value = message;
+}
+
+function openActionModal(modal: ActionModalName): void {
+  if (actionBusy.value) {
+    return;
+  }
+  resetActionFeedback();
+
+  if (modal === "approve" && !canApproveRun.value) {
+    setActionError("Run must be in preview_ready or needs_approval state before approving.");
+    return;
+  }
+  if (modal === "reject" && !canRejectRun.value) {
+    setActionError("Run is not loaded yet.");
+    return;
+  }
+  if (modal === "expire" && !canExpireRun.value) {
+    setActionError("Run cannot be manually expired in current state.");
+    return;
+  }
+  if (modal === "resume" && !canResumeRun.value) {
+    setActionError("Run must be failed or expired before resuming.");
+    return;
+  }
+
+  modalLastFocused.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  activeActionModal.value = modal;
+}
+
+function closeActionModal(): void {
+  if (actionBusy.value) {
+    return;
+  }
+  activeActionModal.value = null;
+}
+
+function focusModalInitialTarget(): void {
+  const dialog = modalDialogRef.value;
+  if (!dialog) {
+    return;
+  }
+  const target =
+    dialog.querySelector<HTMLElement>("[data-autofocus]") ||
+    dialog.querySelector<HTMLElement>("button, input, textarea, select, [tabindex]:not([tabindex='-1'])");
+  target?.focus();
+}
+
+function handleModalKeydown(event: KeyboardEvent): void {
+  if (!activeActionModal.value) {
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeActionModal();
+    return;
+  }
+  if (event.key !== "Tab") {
+    return;
+  }
+
+  const dialog = modalDialogRef.value;
+  if (!dialog) {
+    return;
+  }
+  const focusable = Array.from(
+    dialog.querySelectorAll<HTMLElement>(
+      "a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])",
+    ),
+  );
+  if (!focusable.length) {
+    event.preventDefault();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const current = document.activeElement as HTMLElement | null;
+
+  if (event.shiftKey) {
+    if (!current || current === first || !dialog.contains(current)) {
+      event.preventDefault();
+      last.focus();
+    }
+    return;
+  }
+  if (!current || current === last || !dialog.contains(current)) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 async function approveRun() {
   if (!run.value) {
     return;
   }
 
-  actionError.value = "";
-  actionSuccess.value = "";
+  resetActionFeedback();
 
-  if (!canSubmitDecision.value) {
-    actionError.value = "Run must be in needs_approval state before approving.";
-    return;
-  }
-
-  if (!window.confirm("Approve this run and move it to approved state?")) {
+  if (!canApproveRun.value) {
+    setActionError("Run must be in preview_ready or needs_approval state before approving.");
     return;
   }
 
@@ -474,11 +691,11 @@ async function approveRun() {
       reason: approveReason.value.trim() || undefined,
     });
 
-    actionSuccess.value = "Run approved successfully.";
+    setActionSuccess("Run approved successfully.");
     rejectReason.value = "";
     await refreshDetails({ silent: true });
   } catch (error) {
-    actionError.value = (error as Error).message;
+    setActionError((error as Error).message);
   } finally {
     actionBusy.value = false;
   }
@@ -489,21 +706,16 @@ async function rejectRun() {
     return;
   }
 
-  actionError.value = "";
-  actionSuccess.value = "";
+  resetActionFeedback();
 
-  if (!canSubmitDecision.value) {
-    actionError.value = "Run must be in needs_approval state before rejecting.";
+  if (!canRejectRun.value) {
+    setActionError("Run is not loaded yet.");
     return;
   }
 
   const reason = rejectReason.value.trim();
   if (!reason) {
-    actionError.value = "Reject reason is required.";
-    return;
-  }
-
-  if (!window.confirm("Reject this run and mark it failed?")) {
+    setActionError("Reject reason is required.");
     return;
   }
 
@@ -515,11 +727,11 @@ async function rejectRun() {
       failure_reason_code: rejectFailureReasonCode.value,
     });
 
-    actionSuccess.value = "Run rejected successfully.";
+    setActionSuccess("Run rejected successfully.");
     approveReason.value = "";
     await refreshDetails({ silent: true });
   } catch (error) {
-    actionError.value = (error as Error).message;
+    setActionError((error as Error).message);
   } finally {
     actionBusy.value = false;
   }
@@ -530,15 +742,10 @@ async function expireRun() {
     return;
   }
 
-  actionError.value = "";
-  actionSuccess.value = "";
+  resetActionFeedback();
 
   if (!canExpireRun.value) {
-    actionError.value = "Run cannot be manually expired in current state.";
-    return;
-  }
-
-  if (!window.confirm("Expire this run with recoverable reason PREVIEW_EXPIRED?")) {
+    setActionError("Run cannot be manually expired in current state.");
     return;
   }
 
@@ -547,10 +754,10 @@ async function expireRun() {
     await postJson<RunItem>(`${apiBaseUrl}/api/runs/${run.value.id}/expire`, {
       reason: expireReason.value.trim() || undefined,
     });
-    actionSuccess.value = "Run expired with PREVIEW_EXPIRED recoverable reason.";
+    setActionSuccess("Run expired with PREVIEW_EXPIRED recoverable reason.");
     await refreshDetails({ silent: true });
   } catch (error) {
-    actionError.value = (error as Error).message;
+    setActionError((error as Error).message);
   } finally {
     actionBusy.value = false;
   }
@@ -561,26 +768,22 @@ async function resumeRun() {
     return;
   }
 
-  actionError.value = "";
-  actionSuccess.value = "";
+  resetActionFeedback();
 
   if (!canResumeRun.value) {
-    actionError.value = "Run must be failed or expired before resuming.";
-    return;
-  }
-
-  if (!window.confirm("Resume this run by creating a recoverable child run?")) {
+    setActionError("Run must be failed or expired before resuming.");
     return;
   }
 
   actionBusy.value = true;
   try {
     const child = await postJson<RunItem>(`${apiBaseUrl}/api/runs/${run.value.id}/resume`, {});
-    actionSuccess.value = `Child run queued: ${child.id}`;
+    setActionSuccess(`Child run queued: ${child.id}`);
+    closeActionModal();
     await router.push(`/codex/runs/${child.id}`);
     await refreshDetails();
   } catch (error) {
-    actionError.value = (error as Error).message;
+    setActionError((error as Error).message);
   } finally {
     actionBusy.value = false;
   }
@@ -643,6 +846,9 @@ function isTypingTarget(event: KeyboardEvent): boolean {
 }
 
 async function handleDetailsHotkeys(event: KeyboardEvent) {
+  if (activeActionModal.value) {
+    return;
+  }
   if (isTypingTarget(event)) {
     return;
   }
@@ -655,6 +861,16 @@ async function handleDetailsHotkeys(event: KeyboardEvent) {
 watch(runId, () => {
   void refreshDetails();
   void setupSectionObserver();
+});
+
+watch(activeActionModal, async (value) => {
+  if (value) {
+    await nextTick();
+    focusModalInitialTarget();
+    return;
+  }
+  await nextTick();
+  modalLastFocused.value?.focus();
 });
 
 onMounted(() => {
@@ -951,20 +1167,20 @@ button:disabled {
   font-size: 0.82rem;
 }
 
-.approval-form-grid {
+.action-modal-grid {
   display: grid;
-  gap: 0.7rem;
-  margin-top: 0.6rem;
+  gap: 0.65rem;
+  margin-top: 0.65rem;
 }
 
-.approval-form-grid label {
+.action-modal-grid label {
   display: grid;
   gap: 0.3rem;
 }
 
-.approval-form-grid textarea,
-.approval-form-grid input,
-.approval-form-grid select {
+.action-modal-grid textarea,
+.action-modal-grid input,
+.action-modal-grid select {
   border: 1px solid #cbd5e1;
   border-radius: 10px;
   padding: 0.55rem 0.65rem;
@@ -997,24 +1213,6 @@ button:disabled {
 
 .btn-resume {
   background: #1d4ed8;
-}
-
-.lifecycle-action-grid {
-  display: grid;
-  gap: 0.6rem;
-  margin-bottom: 0.7rem;
-}
-
-.lifecycle-action-grid label {
-  display: grid;
-  gap: 0.3rem;
-}
-
-.lifecycle-action-grid input {
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  padding: 0.55rem 0.65rem;
-  background: #f8fafc;
 }
 
 .lifecycle-hint {
@@ -1063,13 +1261,32 @@ button:disabled {
 }
 
 .event-payload {
-  margin: 0.45rem 0 0;
+  margin: 0;
   background: #0f172a;
   color: #e2e8f0;
   border-radius: 8px;
   padding: 0.6rem;
   overflow: auto;
   font-size: 0.78rem;
+}
+
+.event-payload-details {
+  margin-top: 0.45rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 0.35rem 0.5rem;
+}
+
+.event-payload-details summary {
+  cursor: pointer;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.event-payload-details[open] summary {
+  margin-bottom: 0.45rem;
 }
 
 .chip {
@@ -1117,6 +1334,71 @@ button:disabled {
 .success {
   margin: 0.55rem 0 0;
   color: #166534;
+}
+
+.action-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(15, 23, 42, 0.48);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.action-modal {
+  width: min(560px, 100%);
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.24);
+}
+
+.action-modal-approve {
+  border-top: 4px solid #166534;
+}
+
+.action-modal-reject {
+  border-top: 4px solid #b91c1c;
+}
+
+.action-modal-expire {
+  border-top: 4px solid #9f1239;
+}
+
+.action-modal-resume {
+  border-top: 4px solid #1d4ed8;
+}
+
+.action-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.action-modal-head h3 {
+  margin: 0;
+}
+
+.btn-modal-close,
+.btn-secondary {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.action-modal-subhead {
+  margin: 0.5rem 0 0;
+  color: #334155;
+}
+
+.action-modal-actions {
+  margin-top: 0.85rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 900px) {

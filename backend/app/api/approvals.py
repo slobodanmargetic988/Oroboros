@@ -10,6 +10,7 @@ from app.db.session import get_db_session
 from app.domain.run_state_machine import (
     FailureReasonCode,
     RunState,
+    TERMINAL_STATES,
     TransitionRuleError,
     ensure_transition_allowed,
 )
@@ -316,11 +317,16 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
 def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db_session)) -> ApprovalResponse:
     trace_id = current_trace_id()
     run = _get_run_or_404(db, run_id)
-    status_from, status_to = _transition_or_409(
-        run,
-        target=RunState.FAILED,
-        failure_reason=payload.failure_reason_code,
-    )
+    current_state = RunState(run.status)
+    status_changed = current_state not in TERMINAL_STATES
+    if status_changed:
+        status_from, status_to = _transition_or_409(
+            run,
+            target=RunState.FAILED,
+            failure_reason=payload.failure_reason_code,
+        )
+    else:
+        status_from, status_to = current_state.value, current_state.value
 
     approval = Approval(
         run_id=run.id,
@@ -328,34 +334,54 @@ def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db
         decision="rejected",
         reason=f"{payload.reason} [failure_reason_code={payload.failure_reason_code.value}]",
     )
-    if run.slot_id:
-        slot_id = run.slot_id
+    if status_changed:
+        if run.slot_id:
+            slot_id = run.slot_id
+            try:
+                cleanup_result = cleanup_worktree(db=db, slot_id=slot_id, run_id=run.id)
+            except ValueError as exc:
+                cleanup_result = {"cleaned": False, "slot_id": slot_id, "run_id": run.id, "reason": str(exc)}
+            lease_release_result = release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
+        else:
+            cleanup_result = {
+                "cleaned": False,
+                "slot_id": None,
+                "run_id": run.id,
+                "reason": "run_slot_not_assigned",
+            }
+            lease_release_result = {
+                "released": False,
+                "slot_id": None,
+                "run_id": run.id,
+                "reason": "run_slot_not_assigned",
+            }
         try:
-            cleanup_result = cleanup_worktree(db=db, slot_id=slot_id, run_id=run.id)
+            branch_cleanup_result = delete_run_branch(db=db, run_id=run.id, actor_id=payload.reviewer_id)
         except ValueError as exc:
-            cleanup_result = {"cleaned": False, "slot_id": slot_id, "run_id": run.id, "reason": str(exc)}
-        lease_release_result = release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
+            branch_cleanup_result = {
+                "deleted": False,
+                "run_id": run.id,
+                "branch_name": run.branch_name,
+                "reason": str(exc),
+            }
     else:
         cleanup_result = {
             "cleaned": False,
-            "slot_id": None,
+            "slot_id": run.slot_id,
             "run_id": run.id,
-            "reason": "run_slot_not_assigned",
+            "reason": "terminal_state_no_transition",
         }
         lease_release_result = {
             "released": False,
-            "slot_id": None,
+            "slot_id": run.slot_id,
             "run_id": run.id,
-            "reason": "run_slot_not_assigned",
+            "reason": "terminal_state_no_transition",
         }
-    try:
-        branch_cleanup_result = delete_run_branch(db=db, run_id=run.id, actor_id=payload.reviewer_id)
-    except ValueError as exc:
         branch_cleanup_result = {
             "deleted": False,
             "run_id": run.id,
             "branch_name": run.branch_name,
-            "reason": str(exc),
+            "reason": "terminal_state_no_transition",
         }
 
     append_run_event(
@@ -375,25 +401,45 @@ def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db
         actor_id=payload.reviewer_id,
         audit_action="run.approve.decision",
     )
-    _add_status_transition_event(
-        db,
-        run=run,
-        status_from=status_from,
-        status_to=status_to,
-        payload=_with_trace(
-            {
-            "source": "reject_endpoint",
-            "failure_reason_code": payload.failure_reason_code.value,
-            "reason": payload.reason,
-            "resource_cleanup": cleanup_result,
-            "lease_release": lease_release_result,
-            "branch_cleanup": branch_cleanup_result,
-            },
-            trace_id,
-        ),
-        actor_id=payload.reviewer_id,
-        audit_action="run.approve.rejected",
-    )
+    if status_changed:
+        _add_status_transition_event(
+            db,
+            run=run,
+            status_from=status_from,
+            status_to=status_to,
+            payload=_with_trace(
+                {
+                "source": "reject_endpoint",
+                "failure_reason_code": payload.failure_reason_code.value,
+                "reason": payload.reason,
+                "resource_cleanup": cleanup_result,
+                "lease_release": lease_release_result,
+                "branch_cleanup": branch_cleanup_result,
+                },
+                trace_id,
+            ),
+            actor_id=payload.reviewer_id,
+            audit_action="run.approve.rejected",
+        )
+    else:
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="status_transition",
+            status_from=status_from,
+            status_to=status_to,
+            payload=_with_trace(
+                {
+                "source": "reject_endpoint",
+                "phase": "no_op_terminal_reject",
+                "failure_reason_code": payload.failure_reason_code.value,
+                "reason": payload.reason,
+                },
+                trace_id,
+            ),
+            actor_id=payload.reviewer_id,
+            audit_action="run.approve.rejected_noop",
+        )
     db.add(approval)
     db.commit()
     db.refresh(approval)
@@ -406,6 +452,7 @@ def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db
         commit_sha=run.commit_sha,
         decision="rejected",
         failure_reason_code=payload.failure_reason_code.value,
+        status_changed=status_changed,
     )
 
     return ApprovalResponse(

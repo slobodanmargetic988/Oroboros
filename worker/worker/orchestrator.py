@@ -1080,6 +1080,29 @@ class WorkerOrchestrator:
             return f"preview_publish_command_failed:{command_text}:exit_{proc.returncode}"
         return None
 
+    @staticmethod
+    def _sync_directory_contents(source: Path, destination: Path) -> int:
+        destination.mkdir(parents=True, exist_ok=True)
+
+        for child in destination.iterdir():
+            if child.name == ".gitignore":
+                continue
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+
+        file_count = 0
+        for child in source.iterdir():
+            target = destination / child.name
+            if child.is_dir():
+                shutil.copytree(child, target)
+                file_count += sum(1 for path in target.rglob("*") if path.is_file())
+            else:
+                shutil.copy2(child, target)
+                file_count += 1
+        return file_count
+
     def _publish_preview_surface(
         self,
         *,
@@ -1172,10 +1195,7 @@ class WorkerOrchestrator:
                     if not dist_root.exists() or not dist_root.is_dir():
                         publish_error = f"preview_publish_dist_missing:{dist_root}"
                     else:
-                        if web_root.exists():
-                            shutil.rmtree(web_root)
-                        shutil.copytree(dist_root, web_root)
-                        file_count = sum(1 for path in web_root.rglob("*") if path.is_file())
+                        file_count = self._sync_directory_contents(dist_root, web_root)
                         log_handle.write(f"[info] copied {file_count} files into {web_root}\n")
                         log_handle.flush()
 

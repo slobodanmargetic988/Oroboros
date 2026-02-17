@@ -115,6 +115,24 @@ class ApprovalEndpointOrchestrationTests(unittest.TestCase):
             self.assertEqual(run.status, "failed")
             delete_branch_mock.assert_called_once_with(db=db, run_id=run_id, actor_id=None)
 
+    def test_reject_allows_terminal_runs_without_state_change(self) -> None:
+        run_id = self._create_run(status="merged")
+        with self.session_factory() as db, patch("app.api.approvals.delete_run_branch") as delete_branch_mock:
+            response = reject_run(
+                run_id,
+                RejectRequest(
+                    reviewer_id=None,
+                    reason="post-merge audit reject",
+                    failure_reason_code=FailureReasonCode.POLICY_REJECTED,
+                ),
+                db,
+            )
+            self.assertEqual(response.decision, "rejected")
+            run = db.query(Run).filter(Run.id == run_id).first()
+            self.assertIsNotNone(run)
+            self.assertEqual(run.status, "merged")
+            delete_branch_mock.assert_not_called()
+
 
 class MergeGateCommitPinTests(unittest.TestCase):
     def setUp(self) -> None:
