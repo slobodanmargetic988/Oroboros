@@ -31,6 +31,18 @@ class BuildCodexCommandTests(unittest.TestCase):
         self.assertIn("/tmp/example", command)
         self.assertIn("hello world", command)
 
+    def test_build_command_uses_discovered_codex_binary_when_not_configured(self) -> None:
+        with patch.dict(os.environ, {}, clear=False), patch(
+            "worker.codex_runner.shutil.which",
+            return_value="/usr/local/bin/codex",
+        ):
+            os.environ.pop("WORKER_CODEX_COMMAND_TEMPLATE", None)
+            os.environ.pop("WORKER_CODEX_BIN", None)
+            command = build_codex_command("hello world", Path("/tmp/example"))
+
+        self.assertEqual(command[0], "/usr/local/bin/codex")
+        self.assertIn("hello world", command)
+
 
 class RunCodexCommandTests(unittest.TestCase):
     @staticmethod
