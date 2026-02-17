@@ -18,7 +18,7 @@ from app.domain.run_state_machine import (
     list_run_states,
 )
 from app.models import Run, RunContext, RunEvent, User
-from app.services.git_worktree_manager import cleanup_worktree
+from app.services.git_worktree_manager import cleanup_worktree, delete_run_branch
 from app.services.observability import current_trace_id, emit_structured_log, ensure_trace_id
 from app.services.run_event_log import append_run_event
 from app.services.slot_lease_manager import release_slot_lease
@@ -420,6 +420,15 @@ def cancel_run(run_id: str, db: Session = Depends(get_db_session)) -> RunRespons
             "run_id": run.id,
             "reason": "run_slot_not_assigned",
         }
+    try:
+        branch_cleanup_result = delete_run_branch(db=db, run_id=run.id, actor_id=run.created_by)
+    except ValueError as exc:
+        branch_cleanup_result = {
+            "deleted": False,
+            "run_id": run.id,
+            "branch_name": run.branch_name,
+            "reason": str(exc),
+        }
 
     append_run_event(
         db,
@@ -431,6 +440,7 @@ def cancel_run(run_id: str, db: Session = Depends(get_db_session)) -> RunRespons
             "source": "cancel_endpoint",
             "resource_cleanup": cleanup_result,
             "lease_release": lease_release_result,
+            "branch_cleanup": branch_cleanup_result,
             "trace_id": trace_id,
         },
         actor_id=run.created_by,

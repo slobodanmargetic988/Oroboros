@@ -71,6 +71,15 @@ class ValidationPipelineResult:
     failed_result: CommandExecutionResult | None = None
 
 
+@dataclass(frozen=True)
+class AutoCommitResult:
+    committed: bool
+    commit_sha: str | None
+    changed_file_count: int
+    reason: str | None = None
+    error: str | None = None
+
+
 def transition_run_status(
     run: Run,
     *,
@@ -309,29 +318,6 @@ class WorkerOrchestrator:
                 db.rollback()
                 return
 
-            commit_sha = self._resolve_worktree_commit_sha(claimed.worktree_path)
-            if commit_sha:
-                run.commit_sha = commit_sha
-                append_run_event(
-                    db,
-                    run_id=run.id,
-                    event_type="run_commit_resolved",
-                    payload={
-                        "source": "worker",
-                        "commit_sha": commit_sha,
-                        "trace_id": claimed.trace_id,
-                    },
-                    actor_id=run.created_by,
-                    audit_action="run.edit.commit_resolved",
-                )
-                emit_worker_log(
-                    event="run_commit_resolved",
-                    trace_id=claimed.trace_id,
-                    run_id=run.id,
-                    slot_id=claimed.slot_id,
-                    commit_sha=commit_sha,
-                )
-
             self._record_output_artifact(
                 db=db,
                 run=run,
@@ -388,6 +374,61 @@ class WorkerOrchestrator:
                 )
                 db.commit()
                 return
+
+            auto_commit = self._commit_run_worktree_changes(claimed.run_id, claimed.worktree_path)
+            if auto_commit.error:
+                self._finalize_failed_run(
+                    db=db,
+                    run=run,
+                    slot_id=claimed.slot_id,
+                    failure_reason=FailureReasonCode.UNKNOWN_ERROR,
+                    result=result,
+                    extra_payload={"commit_error": auto_commit.error},
+                    trace_id=claimed.trace_id,
+                )
+                db.commit()
+                return
+
+            if auto_commit.commit_sha:
+                run.commit_sha = auto_commit.commit_sha
+                append_run_event(
+                    db,
+                    run_id=run.id,
+                    event_type="run_commit_resolved",
+                    payload={
+                        "source": "worker",
+                        "commit_sha": auto_commit.commit_sha,
+                        "trace_id": claimed.trace_id,
+                        "auto_committed": auto_commit.committed,
+                        "changed_file_count": auto_commit.changed_file_count,
+                        "reason": auto_commit.reason,
+                    },
+                    actor_id=run.created_by,
+                    audit_action="run.edit.commit_resolved",
+                )
+                if auto_commit.committed:
+                    append_run_event(
+                        db,
+                        run_id=run.id,
+                        event_type="run_commit_created",
+                        payload={
+                            "source": "worker",
+                            "commit_sha": auto_commit.commit_sha,
+                            "trace_id": claimed.trace_id,
+                            "changed_file_count": auto_commit.changed_file_count,
+                        },
+                        actor_id=run.created_by,
+                        audit_action="run.edit.commit_created",
+                    )
+                emit_worker_log(
+                    event="run_commit_resolved",
+                    trace_id=claimed.trace_id,
+                    run_id=run.id,
+                    slot_id=claimed.slot_id,
+                    commit_sha=auto_commit.commit_sha,
+                    auto_committed=auto_commit.committed,
+                    changed_file_count=auto_commit.changed_file_count,
+                )
 
             status_from, status_to = transition_run_status(run, target=RunState.TESTING)
             append_run_event(
@@ -824,6 +865,71 @@ class WorkerOrchestrator:
             return None
         value = proc.stdout.strip()
         return value or None
+
+    @staticmethod
+    def _git_author_env() -> dict[str, str]:
+        name = os.getenv("WORKER_GIT_AUTHOR_NAME", "Ouroboros Worker")
+        email = os.getenv("WORKER_GIT_AUTHOR_EMAIL", "worker@ouroboros.local")
+        return {
+            "GIT_AUTHOR_NAME": name,
+            "GIT_AUTHOR_EMAIL": email,
+            "GIT_COMMITTER_NAME": name,
+            "GIT_COMMITTER_EMAIL": email,
+        }
+
+    def _run_git_worktree(self, worktree_path: Path, args: list[str], *, allow_failure: bool = False) -> subprocess.CompletedProcess[str]:
+        proc = subprocess.run(
+            ["git", "-C", str(worktree_path), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, **self._git_author_env()},
+        )
+        if proc.returncode != 0 and not allow_failure:
+            detail = (proc.stderr.strip() or proc.stdout.strip() or "unknown_error").replace("\n", " ")
+            raise ValueError(f"git_command_failed:{detail}")
+        return proc
+
+    def _commit_run_worktree_changes(self, run_id: str, worktree_path: Path) -> AutoCommitResult:
+        status = self._run_git_worktree(worktree_path, ["status", "--porcelain", "--untracked-files=all"])
+        changed_lines = [line for line in status.stdout.splitlines() if line.strip()]
+        if not changed_lines:
+            return AutoCommitResult(
+                committed=False,
+                commit_sha=self._resolve_worktree_commit_sha(worktree_path),
+                changed_file_count=0,
+                reason="no_changes",
+            )
+
+        self._run_git_worktree(worktree_path, ["add", "-A"])
+        commit_message = f"run({run_id}): apply generated changes"
+        commit_proc = self._run_git_worktree(
+            worktree_path,
+            ["commit", "--no-gpg-sign", "-m", commit_message],
+            allow_failure=True,
+        )
+        if commit_proc.returncode != 0:
+            detail = (commit_proc.stderr.strip() or commit_proc.stdout.strip() or "unknown_error").replace("\n", " ")
+            if "nothing to commit" in detail.lower():
+                return AutoCommitResult(
+                    committed=False,
+                    commit_sha=self._resolve_worktree_commit_sha(worktree_path),
+                    changed_file_count=0,
+                    reason="no_changes",
+                )
+            return AutoCommitResult(
+                committed=False,
+                commit_sha=None,
+                changed_file_count=len(changed_lines),
+                error=f"git_commit_failed:{detail}",
+            )
+
+        return AutoCommitResult(
+            committed=True,
+            commit_sha=self._resolve_worktree_commit_sha(worktree_path),
+            changed_file_count=len(changed_lines),
+            reason="committed",
+        )
 
     def _run_validation_pipeline(
         self,

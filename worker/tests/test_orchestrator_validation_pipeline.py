@@ -135,7 +135,16 @@ class ValidationPipelineTests(unittest.TestCase):
                     {"exit_code": 0},  # test
                 ]
             )
-        ), patch.object(worker_orchestrator, "build_codex_command", return_value=["codex", "run"]):
+        ), patch.object(worker_orchestrator, "build_codex_command", return_value=["codex", "run"]), patch.object(
+            worker_orchestrator.WorkerOrchestrator,
+            "_commit_run_worktree_changes",
+            return_value=worker_orchestrator.AutoCommitResult(
+                committed=True,
+                commit_sha="deadbeef",
+                changed_file_count=2,
+                reason="committed",
+            ),
+        ):
             orchestrator = worker_orchestrator.WorkerOrchestrator()
             processed = orchestrator.process_next_run()
 
@@ -145,6 +154,7 @@ class ValidationPipelineTests(unittest.TestCase):
             run = db.query(Run).filter(Run.id == self.run_id).first()
             self.assertIsNotNone(run)
             self.assertEqual(run.status, "preview_ready")
+            self.assertEqual(run.commit_sha, "deadbeef")
 
             checks = (
                 db.query(ValidationCheck)
@@ -171,6 +181,7 @@ class ValidationPipelineTests(unittest.TestCase):
             self.assertIn("run.test.started", audit_actions)
             self.assertIn("run.test.check_completed", audit_actions)
             self.assertIn("run.test.completed", audit_actions)
+            self.assertIn("run.edit.commit_created", audit_actions)
 
     def test_failed_required_check_marks_run_failed_and_stops_pipeline(self) -> None:
         with tempfile.TemporaryDirectory() as artifact_root, patch.dict(
@@ -193,7 +204,16 @@ class ValidationPipelineTests(unittest.TestCase):
                     {"exit_code": 1},  # lint fails
                 ]
             )
-        ), patch.object(worker_orchestrator, "build_codex_command", return_value=["codex", "run"]):
+        ), patch.object(worker_orchestrator, "build_codex_command", return_value=["codex", "run"]), patch.object(
+            worker_orchestrator.WorkerOrchestrator,
+            "_commit_run_worktree_changes",
+            return_value=worker_orchestrator.AutoCommitResult(
+                committed=True,
+                commit_sha="deadbeef",
+                changed_file_count=1,
+                reason="committed",
+            ),
+        ):
             orchestrator = worker_orchestrator.WorkerOrchestrator()
             processed = orchestrator.process_next_run()
 
@@ -240,7 +260,16 @@ class ValidationPipelineTests(unittest.TestCase):
             return_value={"slot_id": "preview1", "db_name": "app_preview_1"},
         ), patch.object(worker_orchestrator, "assign_worktree", side_effect=self._fake_assign_worktree), patch.object(
             worker_orchestrator, "run_codex_command", side_effect=self._make_fake_runner([{"timed_out": True}])
-        ), patch.object(worker_orchestrator, "build_codex_command", return_value=["codex", "run"]):
+        ), patch.object(worker_orchestrator, "build_codex_command", return_value=["codex", "run"]), patch.object(
+            worker_orchestrator.WorkerOrchestrator,
+            "_commit_run_worktree_changes",
+            return_value=worker_orchestrator.AutoCommitResult(
+                committed=False,
+                commit_sha="deadbeef",
+                changed_file_count=0,
+                reason="no_changes",
+            ),
+        ):
             orchestrator = worker_orchestrator.WorkerOrchestrator()
             processed = orchestrator.process_next_run()
 
