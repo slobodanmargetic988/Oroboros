@@ -127,7 +127,7 @@
             <span>Ended: {{ formatDateTime(check.ended_at) }}</span>
             <span>Duration: {{ formatDuration(check.started_at, check.ended_at) }}</span>
           </div>
-          <a v-if="check.artifact_uri" :href="check.artifact_uri" target="_blank" rel="noreferrer">
+          <a v-if="check.artifact_uri" :href="buildArtifactHref(check.artifact_uri)" target="_blank" rel="noreferrer">
             Open check artifact/log
           </a>
         </li>
@@ -214,7 +214,7 @@
       <h2>Artifact Links</h2>
       <ul v-if="artifactLinks.length" class="artifact-list">
         <li v-for="artifact in artifactLinks" :key="`${artifact.source}:${artifact.uri}`">
-          <a :href="artifact.uri" target="_blank" rel="noreferrer">{{ artifact.label }}</a>
+          <a :href="buildArtifactHref(artifact.uri)" target="_blank" rel="noreferrer">{{ artifact.label }}</a>
           <span class="artifact-source">{{ artifact.source }}</span>
         </li>
       </ul>
@@ -377,6 +377,17 @@ function formatDuration(startedAt: string | null, endedAt: string | null): strin
 
 function stringifyPayload(payload: Record<string, unknown>): string {
   return JSON.stringify(payload, null, 2);
+}
+
+function buildArtifactHref(uri: string): string {
+  const value = uri.trim();
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+  if (/^s3:\/\//i.test(value)) {
+    return value;
+  }
+  return `${apiBaseUrl}/api/runs/${encodeURIComponent(runId.value)}/artifacts/content?uri=${encodeURIComponent(value)}`;
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -668,7 +679,9 @@ onUnmounted(() => {
 
 <style scoped>
 .run-details-page {
-  max-width: 980px;
+  width: min(90vw, 980px);
+  max-width: 90vw;
+  box-sizing: border-box;
   margin: 0 auto;
   padding: 2.5rem 1.2rem 3rem;
   display: grid;
