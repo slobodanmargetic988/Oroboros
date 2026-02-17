@@ -123,6 +123,10 @@ class ValidationPipelineTests(unittest.TestCase):
             clear=False,
         ), patch.object(worker_orchestrator, "SessionLocal", self.session_factory), patch.object(
             worker_orchestrator, "acquire_slot_lease", side_effect=self._fake_acquire_slot_lease
+        ), patch.object(
+            worker_orchestrator,
+            "reset_and_seed_slot",
+            return_value={"slot_id": "preview1", "db_name": "app_preview_1"},
         ), patch.object(worker_orchestrator, "assign_worktree", side_effect=self._fake_assign_worktree), patch.object(
             worker_orchestrator, "run_codex_command", side_effect=self._make_fake_runner(
                 [
@@ -178,6 +182,10 @@ class ValidationPipelineTests(unittest.TestCase):
             clear=False,
         ), patch.object(worker_orchestrator, "SessionLocal", self.session_factory), patch.object(
             worker_orchestrator, "acquire_slot_lease", side_effect=self._fake_acquire_slot_lease
+        ), patch.object(
+            worker_orchestrator,
+            "reset_and_seed_slot",
+            return_value={"slot_id": "preview1", "db_name": "app_preview_1"},
         ), patch.object(worker_orchestrator, "assign_worktree", side_effect=self._fake_assign_worktree), patch.object(
             worker_orchestrator, "run_codex_command", side_effect=self._make_fake_runner(
                 [
@@ -226,6 +234,10 @@ class ValidationPipelineTests(unittest.TestCase):
             clear=False,
         ), patch.object(worker_orchestrator, "SessionLocal", self.session_factory), patch.object(
             worker_orchestrator, "acquire_slot_lease", side_effect=self._fake_acquire_slot_lease
+        ), patch.object(
+            worker_orchestrator,
+            "reset_and_seed_slot",
+            return_value={"slot_id": "preview1", "db_name": "app_preview_1"},
         ), patch.object(worker_orchestrator, "assign_worktree", side_effect=self._fake_assign_worktree), patch.object(
             worker_orchestrator, "run_codex_command", side_effect=self._make_fake_runner([{"timed_out": True}])
         ), patch.object(worker_orchestrator, "build_codex_command", return_value=["codex", "run"]):
@@ -254,6 +266,51 @@ class ValidationPipelineTests(unittest.TestCase):
             self.assertTrue(failed_event.payload.get("recoverable"))
             self.assertEqual(failed_event.payload.get("recovery_strategy"), "create_child_run")
             self.assertEqual(failed_event.payload.get("resume_endpoint"), f"/api/runs/{self.run_id}/resume")
+
+    def test_preview_db_reset_failure_marks_run_failed_and_releases_slot(self) -> None:
+        with tempfile.TemporaryDirectory() as artifact_root, patch.dict(
+            os.environ,
+            {
+                "WORKER_REQUIRED_CHECKS": "lint",
+                "WORKER_ARTIFACT_ROOT": artifact_root,
+            },
+            clear=False,
+        ), patch.object(worker_orchestrator, "SessionLocal", self.session_factory), patch.object(
+            worker_orchestrator, "acquire_slot_lease", side_effect=self._fake_acquire_slot_lease
+        ), patch.object(
+            worker_orchestrator,
+            "reset_and_seed_slot",
+            side_effect=RuntimeError("seed bootstrap failed"),
+        ), patch.object(worker_orchestrator, "assign_worktree", side_effect=self._fake_assign_worktree), patch.object(
+            worker_orchestrator, "run_codex_command"
+        ) as run_codex_mock, patch.object(worker_orchestrator, "build_codex_command", return_value=["codex", "run"]):
+            orchestrator = worker_orchestrator.WorkerOrchestrator()
+            processed = orchestrator.process_next_run()
+
+        self.assertTrue(processed)
+        run_codex_mock.assert_not_called()
+
+        with self.session_factory() as db:
+            run = db.query(Run).filter(Run.id == self.run_id).first()
+            self.assertIsNotNone(run)
+            self.assertEqual(run.status, "failed")
+
+            lease = db.query(SlotLease).filter(SlotLease.slot_id == "preview-1").first()
+            self.assertIsNotNone(lease)
+            self.assertEqual(lease.lease_state, "released")
+
+            failed_event = (
+                db.query(RunEvent)
+                .filter(
+                    RunEvent.run_id == self.run_id,
+                    RunEvent.event_type == "status_transition",
+                    RunEvent.status_to == "failed",
+                )
+                .order_by(RunEvent.id.desc())
+                .first()
+            )
+            self.assertIsNotNone(failed_event)
+            self.assertEqual(failed_event.payload.get("failure_reason_code"), "MIGRATION_FAILED")
 
 
 if __name__ == "__main__":

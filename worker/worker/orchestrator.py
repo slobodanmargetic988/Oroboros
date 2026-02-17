@@ -31,8 +31,9 @@ from app.domain.run_state_machine import (  # noqa: E402
     TransitionRuleError,
     ensure_transition_allowed,
 )
-from app.models import Run, RunArtifact, RunContext, RunEvent, ValidationCheck  # noqa: E402
+from app.models import PreviewDbReset, Run, RunArtifact, RunContext, RunEvent, ValidationCheck  # noqa: E402
 from app.services.git_worktree_manager import assign_worktree  # noqa: E402
+from app.services.preview_db_reset import db_name_for_slot, reset_and_seed_slot  # noqa: E402
 from app.services.run_event_log import append_run_event  # noqa: E402
 from app.services.slot_lease_manager import (  # noqa: E402
     acquire_slot_lease,
@@ -244,6 +245,9 @@ class WorkerOrchestrator:
             )
 
     def _execute_claimed_run(self, claimed: ClaimedRun) -> None:
+        if not self._reset_preview_db_for_claimed_run(claimed):
+            return
+
         if not self._mark_editing(claimed.run_id, claimed.slot_id, claimed.trace_id):
             return
 
@@ -453,6 +457,253 @@ class WorkerOrchestrator:
 
             self._finalize_success_run(db=db, run=run, result=result, trace_id=claimed.trace_id)
             db.commit()
+
+    @staticmethod
+    def _env_bool(name: str, default: bool = False) -> bool:
+        raw = os.getenv(name)
+        if raw is None:
+            return default
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _preview_reset_strategy() -> str:
+        strategy = os.getenv("WORKER_PREVIEW_RESET_STRATEGY", "seed").strip().lower() or "seed"
+        if strategy not in {"seed", "snapshot"}:
+            return "seed"
+        return strategy
+
+    @staticmethod
+    def _preview_seed_version() -> str:
+        return os.getenv("WORKER_PREVIEW_SEED_VERSION", "v1").strip() or "v1"
+
+    @staticmethod
+    def _preview_snapshot_version() -> str | None:
+        value = os.getenv("WORKER_PREVIEW_SNAPSHOT_VERSION", "").strip()
+        return value or None
+
+    def _reset_preview_db_for_claimed_run(self, claimed: ClaimedRun) -> bool:
+        strategy = self._preview_reset_strategy()
+        seed_version = self._preview_seed_version()
+        snapshot_version = self._preview_snapshot_version()
+        dry_run = self._env_bool("WORKER_PREVIEW_RESET_DRY_RUN", default=False)
+
+        reset_id: int | None = None
+        try:
+            db_name = db_name_for_slot(claimed.slot_id)
+        except ValueError as exc:
+            self.logger.error("Invalid slot id for preview reset %s: %s", claimed.slot_id, exc)
+            return self._finalize_preview_reset_failure(
+                claimed=claimed,
+                error=str(exc),
+                strategy=strategy,
+                seed_version=seed_version,
+                snapshot_version=snapshot_version,
+                dry_run=dry_run,
+                reset_id=None,
+            )
+
+        with SessionLocal() as db:
+            run = db.query(Run).filter(Run.id == claimed.run_id).with_for_update().first()
+            if run is None:
+                db.rollback()
+                return False
+            if run.status == RunState.CANCELED.value:
+                append_run_event(
+                    db,
+                    run_id=run.id,
+                    event_type="worker_skipped_canceled_before_execution",
+                    payload={
+                        "source": "worker",
+                        "slot_id": claimed.slot_id,
+                        "trace_id": claimed.trace_id,
+                    },
+                    actor_id=run.created_by,
+                    audit_action="run.edit.skipped_canceled",
+                )
+                release_slot_lease(db=db, slot_id=claimed.slot_id, run_id=claimed.run_id)
+                db.commit()
+                return False
+
+            reset_record = PreviewDbReset(
+                run_id=claimed.run_id,
+                slot_id=claimed.slot_id,
+                db_name=db_name,
+                strategy=strategy,
+                seed_version=seed_version,
+                snapshot_version=snapshot_version,
+                reset_status="running",
+                details_json={"source": "worker", "dry_run": dry_run},
+            )
+            db.add(reset_record)
+            db.flush()
+            reset_id = reset_record.id
+
+            append_run_event(
+                db,
+                run_id=claimed.run_id,
+                event_type="preview_db_reset_started",
+                payload={
+                    "source": "worker",
+                    "slot_id": claimed.slot_id,
+                    "db_name": db_name,
+                    "strategy": strategy,
+                    "seed_version": seed_version,
+                    "snapshot_version": snapshot_version,
+                    "dry_run": dry_run,
+                    "trace_id": claimed.trace_id,
+                },
+                actor_id=run.created_by,
+                audit_action="run.preview.reset_started",
+            )
+            db.commit()
+
+        try:
+            result = reset_and_seed_slot(
+                slot_id=claimed.slot_id,
+                run_id=claimed.run_id,
+                seed_version=seed_version,
+                strategy=strategy,
+                snapshot_version=snapshot_version,
+                dry_run=dry_run,
+            )
+        except Exception as exc:
+            return self._finalize_preview_reset_failure(
+                claimed=claimed,
+                error=str(exc),
+                strategy=strategy,
+                seed_version=seed_version,
+                snapshot_version=snapshot_version,
+                dry_run=dry_run,
+                reset_id=reset_id,
+            )
+
+        with SessionLocal() as db:
+            run = db.query(Run).filter(Run.id == claimed.run_id).with_for_update().first()
+            if run is None:
+                db.rollback()
+                return False
+
+            if reset_id is not None:
+                reset_record = db.query(PreviewDbReset).filter(PreviewDbReset.id == reset_id).with_for_update().first()
+                if reset_record is not None:
+                    reset_record.reset_status = "completed"
+                    reset_record.reset_completed_at = utcnow()
+                    reset_record.details_json = dict(result)
+
+            append_run_event(
+                db,
+                run_id=claimed.run_id,
+                event_type="preview_db_reset_completed",
+                payload={
+                    "source": "worker",
+                    "slot_id": claimed.slot_id,
+                    "db_name": db_name,
+                    "strategy": strategy,
+                    "seed_version": seed_version,
+                    "snapshot_version": snapshot_version,
+                    "dry_run": dry_run,
+                    "details": result,
+                    "trace_id": claimed.trace_id,
+                },
+                actor_id=run.created_by,
+                audit_action="run.preview.reset_completed",
+            )
+            db.commit()
+
+        emit_worker_log(
+            event="preview_db_reset_completed",
+            trace_id=claimed.trace_id,
+            run_id=claimed.run_id,
+            slot_id=claimed.slot_id,
+            strategy=strategy,
+            seed_version=seed_version,
+            snapshot_version=snapshot_version,
+            dry_run=dry_run,
+        )
+        return True
+
+    def _finalize_preview_reset_failure(
+        self,
+        *,
+        claimed: ClaimedRun,
+        error: str,
+        strategy: str,
+        seed_version: str,
+        snapshot_version: str | None,
+        dry_run: bool,
+        reset_id: int | None,
+    ) -> bool:
+        with SessionLocal() as db:
+            run = db.query(Run).filter(Run.id == claimed.run_id).with_for_update().first()
+            if run is None:
+                db.rollback()
+                return False
+
+            if reset_id is not None:
+                reset_record = db.query(PreviewDbReset).filter(PreviewDbReset.id == reset_id).with_for_update().first()
+                if reset_record is not None:
+                    reset_record.reset_status = "failed"
+                    reset_record.reset_completed_at = utcnow()
+                    reset_record.details_json = {"error": error}
+
+            append_run_event(
+                db,
+                run_id=claimed.run_id,
+                event_type="preview_db_reset_failed",
+                payload={
+                    "source": "worker",
+                    "slot_id": claimed.slot_id,
+                    "strategy": strategy,
+                    "seed_version": seed_version,
+                    "snapshot_version": snapshot_version,
+                    "dry_run": dry_run,
+                    "error": error,
+                    "trace_id": claimed.trace_id,
+                },
+                actor_id=run.created_by,
+                audit_action="run.preview.reset_failed",
+            )
+
+            if run.status != RunState.CANCELED.value:
+                try:
+                    status_from, status_to = transition_run_status(
+                        run,
+                        target=RunState.FAILED,
+                        failure_reason=FailureReasonCode.MIGRATION_FAILED,
+                    )
+                    append_run_event(
+                        db,
+                        run_id=run.id,
+                        event_type="status_transition",
+                        status_from=status_from,
+                        status_to=status_to,
+                        payload={
+                            "source": "worker",
+                            "failure_reason_code": FailureReasonCode.MIGRATION_FAILED.value,
+                            "reason": "preview_db_reset_failed",
+                            "error": error,
+                            "trace_id": claimed.trace_id,
+                        },
+                        actor_id=run.created_by,
+                        audit_action="run.preview.reset_failure_terminal",
+                    )
+                except TransitionRuleError:
+                    pass
+
+            release_slot_lease(db=db, slot_id=claimed.slot_id, run_id=claimed.run_id)
+            db.commit()
+
+        emit_worker_log(
+            event="run_failed",
+            level=logging.WARNING,
+            trace_id=claimed.trace_id,
+            run_id=claimed.run_id,
+            slot_id=claimed.slot_id,
+            failure_reason_code=FailureReasonCode.MIGRATION_FAILED.value,
+            reason="preview_db_reset_failed",
+            error=error,
+        )
+        return False
 
     def _mark_editing(self, run_id: str, slot_id: str, trace_id: str | None) -> bool:
         with SessionLocal() as db:

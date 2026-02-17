@@ -28,6 +28,12 @@ This repository contains the initial runtime boundaries for the Codex Builder Co
 7. Run preview smoke/E2E harness (headless):
    - `./scripts/preview-smoke-e2e.sh --preview-url <preview_url>`
 8. Read topology and operation guides:
+   - `docs/public-user-guide.html`
+   - `docs/faq.html`
+   - `docs/developer-architecture-guide.html`
+   - `docs/configuration-guide.html`
+   - `docs/platform-prerequisites-guide.html`
+   - `docs/database-usage-guide.html`
    - `docs/runtime-topology.md`
    - `docs/deployment-flow.md`
    - `docs/preview-runtime-slots.md`
