@@ -1,5 +1,33 @@
 <template>
-  <div class="codex-page" role="main">
+  <div class="codex-shell">
+    <nav class="codex-menu" aria-label="Ouroboros docs">
+      <ul class="menu-list">
+        <li class="menu-item">
+          <a class="menu-link menu-link-active" href="/codex">Codex Inbox</a>
+        </li>
+        <li ref="menuContainerRef" class="menu-item">
+          <button
+            type="button"
+            class="menu-trigger"
+            aria-haspopup="true"
+            :aria-expanded="menuOpen ? 'true' : 'false'"
+            @click="toggleMenu"
+          >
+            Guides <span class="menu-caret">▾</span>
+          </button>
+          <div v-if="menuOpen" class="menu-panel">
+            <a href="/docs/public-user-guide.html" @click="closeMenu">Public User Guide</a>
+            <a href="/docs/developer-architecture-guide.html" @click="closeMenu">Developer Architecture Guide</a>
+            <a href="/docs/configuration-guide.html" @click="closeMenu">Configuration Guide</a>
+            <a href="/docs/platform-prerequisites-guide.html" @click="closeMenu">Platform Prerequisites Guide</a>
+            <a href="/docs/database-usage-guide.html" @click="closeMenu">Database Usage Guide</a>
+            <a href="/docs/faq.html" @click="closeMenu">FAQ</a>
+          </div>
+        </li>
+      </ul>
+    </nav>
+
+    <div class="codex-page" role="main">
     <header class="hero">
       <div class="hero-art" aria-hidden="true">
         <img src="/Ouroboros.png" alt="" />
@@ -172,6 +200,7 @@
         <button type="button" :disabled="offset + limit >= total || runsLoading" @click="nextPage">Next</button>
       </div>
     </section>
+    </div>
   </div>
 </template>
 
@@ -218,6 +247,8 @@ const lastSync = ref<Date | null>(null);
 const slots = ref<SlotStateItem[]>([]);
 const slotsError = ref("");
 const waitingReasonsByRunId = ref<Record<string, SlotWaitingReason>>({});
+const menuOpen = ref(false);
+const menuContainerRef = ref<HTMLElement | null>(null);
 
 const commonStatuses = [
   "queued",
@@ -526,6 +557,31 @@ function isTypingTarget(event: KeyboardEvent): boolean {
   return tagName === "input" || tagName === "textarea" || target.isContentEditable;
 }
 
+function toggleMenu() {
+  menuOpen.value = !menuOpen.value;
+}
+
+function closeMenu() {
+  menuOpen.value = false;
+}
+
+function handleDocumentClick(event: MouseEvent) {
+  const target = event.target as Node | null;
+  if (!target) {
+    return;
+  }
+  if (menuContainerRef.value?.contains(target)) {
+    return;
+  }
+  closeMenu();
+}
+
+function handleDocumentKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape") {
+    closeMenu();
+  }
+}
+
 async function handleInboxHotkeys(event: KeyboardEvent) {
   if (isTypingTarget(event)) {
     return;
@@ -556,6 +612,8 @@ onMounted(async () => {
     void refreshRuns();
   }, 5000);
   window.addEventListener("keydown", handleInboxHotkeys);
+  document.addEventListener("click", handleDocumentClick);
+  document.addEventListener("keydown", handleDocumentKeydown);
 });
 
 watch(
@@ -572,26 +630,121 @@ onUnmounted(() => {
     clearInterval(pollHandle);
   }
   window.removeEventListener("keydown", handleInboxHotkeys);
+  document.removeEventListener("click", handleDocumentClick);
+  document.removeEventListener("keydown", handleDocumentKeydown);
 });
 </script>
 
 <style scoped>
+.codex-shell {
+  min-height: 100%;
+}
+
 .codex-page {
   position: relative;
   isolation: isolate;
   max-width: 980px;
   margin: 0 auto;
-  padding: 2.5rem 1.2rem 3rem;
+  padding: 1.2rem 1.2rem 3rem;
   display: grid;
   gap: 1.2rem;
 }
 
+.codex-menu {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  border-bottom: 1px solid #d8e2ec;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(6px);
+  padding: 0.55rem clamp(0.8rem, 3vw, 1.6rem);
+}
+
+.menu-list {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 980px;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.menu-item {
+  position: relative;
+  display: block;
+}
+
+.menu-trigger {
+  cursor: pointer;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.45rem 0.7rem;
+}
+
+.menu-caret {
+  margin-left: 0.3rem;
+}
+
+.menu-link {
+  display: inline-block;
+  text-decoration: none;
+  color: #0f172a;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 0.45rem 0.7rem;
+}
+
+.menu-link:hover {
+  background: #eff6ff;
+  color: #1e40af;
+}
+
+.menu-link-active {
+  border-color: #93c5fd;
+  color: #1e3a8a;
+}
+
+.menu-panel {
+  position: absolute;
+  z-index: 20;
+  margin-top: 0.45rem;
+  min-width: 280px;
+  display: grid;
+  gap: 0.2rem;
+  border: 1px solid #d8e2ec;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+  padding: 0.4rem;
+}
+
+.menu-panel a {
+  color: #1e293b;
+  text-decoration: none;
+  border-radius: 8px;
+  padding: 0.42rem 0.5rem;
+  font-size: 0.9rem;
+}
+
+.menu-panel a:hover {
+  background: #eff6ff;
+  color: #1e40af;
+}
+
 @keyframes codex-spin {
   from {
-    transform: rotate(360deg);
+    transform: rotate(0deg);
   }
   to {
-    transform: rotate(0deg);
+    transform: rotate(360deg);
   }
 }
 
@@ -609,16 +762,17 @@ onUnmounted(() => {
   position: absolute;
   top: 52%;
   right: 16px;
-  width: min(24vw, 220px);
+  width: min(19.2vw, 176px);
   transform: translateY(-50%);
   pointer-events: none;
-  opacity: 0.26;
+  opacity: 1;
 }
 
 .hero-art img {
   display: block;
   width: 100%;
   height: auto;
+  filter: none;
   transform-origin: center center;
   animation: codex-spin 12s linear infinite;
 }
@@ -983,9 +1137,9 @@ button:disabled {
   }
 
   .hero-art {
-    width: 150px;
+    width: 120px;
     right: 12px;
-    opacity: 0.16;
+    opacity: 1;
   }
 
   .row,

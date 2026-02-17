@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ouroboros Developer Architecture Guide</title>
+  <style>
+    :root {
+      --bg: #f2f5fb;
+      --panel: #ffffff;
+      --ink: #17233e;
+      --muted: #546388;
+      --line: #d9e3f5;
+      --brand: #0f54ff;
+      --brand-soft: #e8efff;
+      --ok: #0f6c3f;
+      --warn: #8f5300;
+      --bad: #a12828;
+      --shadow: 0 18px 40px rgba(19, 42, 87, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+      color: var(--ink);
+      line-height: 1.56;
+      background:
+        radial-gradient(900px 460px at 95% -10%, #dbe9ff 0%, transparent 62%),
+        radial-gradient(800px 420px at -10% 0%, #ecf3ff 0%, transparent 58%),
+        var(--bg);
+    }
+
+    .top-menu {
+      position: sticky;
+      top: 0;
+      z-index: 90;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.97);
+      backdrop-filter: blur(6px);
+      padding: 0.55rem 1rem;
+    }
+
+    .top-menu-inner {
+      width: min(1220px, calc(100% - 2rem));
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+
+    .top-link,
+    .top-trigger {
+      display: inline-block;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      background: #f8fafc;
+      color: #0f172a;
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.45rem 0.7rem;
+      cursor: pointer;
+      font-family: inherit;
+      line-height: 1.2;
+    }
+
+    .top-link:hover,
+    .top-trigger:hover {
+      background: #eff6ff;
+      color: #1e40af;
+    }
+
+    .top-link.is-active {
+      border-color: #93c5fd;
+      color: #1e3a8a;
+    }
+
+    .top-dropdown {
+      position: relative;
+    }
+
+    .top-caret {
+      margin-left: 0.3rem;
+    }
+
+    .top-panel {
+      position: absolute;
+      z-index: 20;
+      margin-top: 0.45rem;
+      min-width: 280px;
+      display: none;
+      gap: 0.2rem;
+      border: 1px solid #d8e2ec;
+      border-radius: 10px;
+      background: #ffffff;
+      box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+      padding: 0.4rem;
+    }
+
+    .top-panel.is-open {
+      display: grid;
+    }
+
+    .top-panel a {
+      color: #1e293b;
+      text-decoration: none;
+      border-radius: 8px;
+      padding: 0.42rem 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .top-panel a:hover,
+    .top-panel a.is-active {
+      background: #eff6ff;
+      color: #1e40af;
+    }
+
+    .wrap {
+      width: min(1200px, calc(100% - 2rem));
+      margin: 1.75rem auto 3rem;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 2rem;
+      background: linear-gradient(130deg, #f8fbff 0%, #edf3ff 100%);
+      box-shadow: var(--shadow);
+    }
+
+    .hero-mark {
+      position: absolute;
+      top: 0px;
+      right: 28px;
+      width: auto;
+      max-width: clamp(170px, 19vw, 250px);
+      height: auto;
+      max-height: 100%;
+      opacity: 0.42;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .hero> :not(.hero-mark) {
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      margin: 0 0 0.4rem;
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: #1f459f;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.75rem, 3.5vw, 2.65rem);
+      line-height: 1.15;
+    }
+
+    .lead {
+      margin: 0.8rem 0 0;
+      max-width: 92ch;
+      color: #2f426c;
+    }
+
+    .section {
+      margin-top: 1.1rem;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 1.15rem;
+    }
+
+    .section h2 {
+      margin: 0 0 0.55rem;
+      font-size: 1.24rem;
+    }
+
+    .section h3 {
+      margin: 0.8rem 0 0.35rem;
+      font-size: 1.05rem;
+    }
+
+    p {
+      margin: 0.35rem 0;
+    }
+
+    ul,
+    ol {
+      margin: 0.4rem 0 0;
+      padding-left: 1.2rem;
+    }
+
+    li {
+      margin-bottom: 0.45rem;
+    }
+
+    .grid {
+      margin-top: 0.7rem;
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.8rem;
+      background: #fcfdff;
+    }
+
+    .card h4 {
+      margin: 0 0 0.3rem;
+      font-size: 0.97rem;
+    }
+
+    .hint {
+      margin-top: 0.55rem;
+      border-left: 3px solid var(--brand);
+      background: var(--brand-soft);
+      color: #193468;
+      border-radius: 8px;
+      padding: 0.65rem 0.75rem;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 740px;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      padding: 0.55rem;
+      font-size: 0.94rem;
+    }
+
+    th {
+      background: #f3f7ff;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.86rem;
+      padding: 0.04rem 0.35rem;
+      border-radius: 6px;
+      border: 1px solid #d6e0f4;
+      background: #f2f6ff;
+    }
+
+    .good {
+      color: var(--ok);
+      font-weight: 600;
+    }
+
+    .warn {
+      color: var(--warn);
+      font-weight: 600;
+    }
+
+    .bad {
+      color: var(--bad);
+      font-weight: 600;
+    }
+
+    .small {
+      color: #677698;
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 720px) {
+      .hero-mark {
+        width: 132px;
+        top: 16px;
+        right: 16px;
+        opacity: 0.3;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <nav class="top-menu" aria-label="Ouroboros navigation">
+    <div class="top-menu-inner">
+      <a class="top-link" href="/codex">Codex Inbox</a>
+      <div class="top-dropdown" data-docs-menu>
+        <button type="button" class="top-trigger" aria-haspopup="true" aria-expanded="false">
+          Guides <span class="top-caret">▾</span>
+        </button>
+        <div class="top-panel" role="menu">
+          <a href="/docs/public-user-guide.html">Public User Guide</a>
+          <a href="/docs/developer-architecture-guide.html">Developer Architecture Guide</a>
+          <a href="/docs/configuration-guide.html">Configuration Guide</a>
+          <a href="/docs/platform-prerequisites-guide.html">Platform Prerequisites Guide</a>
+          <a href="/docs/database-usage-guide.html">Database Usage Guide</a>
+          <a href="/docs/faq.html">FAQ</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <header class="hero">
+      <img class="hero-mark" src="../Ouroboros.png" alt="" />
+      <p class="eyebrow">Ouroboros</p>
+      <h1>Developer Architecture Guide</h1>
+      <p class="lead">
+        This document explains how Ouroboros actually works in code: run lifecycle, worktree isolation, failure
+        recovery, test coverage, cross-stack feature changes, and system safety guardrails.
+      </p>
+    </header>
+
+    <section class="section">
+      <h2>1) What The System Is</h2>
+      <p>
+        Ouroboros is a host-deployed control plane that accepts a change request, executes the change in a slot-bound
+        git worktree, validates it, exposes preview status in the UI, and only merges after approval.
+      </p>
+      <div class="grid">
+        <article class="card">
+          <h4>Frontend</h4>
+          <p><code>/codex</code> inbox, run details, approvals, notifications, route badges, quick prompt overlay.</p>
+        </article>
+        <article class="card">
+          <h4>Backend API</h4>
+          <p>Run CRUD, lifecycle transitions, approvals/rejections, events, slot/worktree APIs, merge gate.</p>
+        </article>
+        <article class="card">
+          <h4>Worker</h4>
+          <p>Claims queued runs, acquires slot lease, assigns worktree, executes Codex command, runs checks.</p>
+        </article>
+        <article class="card">
+          <h4>Infra Runtime</h4>
+          <p>Host services with systemd, reverse proxy, release/rollback scripts, stale lease maintenance timers.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>2) End-To-End Run Flow</h2>
+      <ol>
+        <li>User creates run via <code>POST /api/runs</code> with prompt + context.</li>
+        <li>Run starts at <code>queued</code>.</li>
+        <li>Worker claims oldest queued run using DB lock (<code>with_for_update(skip_locked=True)</code>).</li>
+        <li>Worker acquires one fixed slot lease (<code>preview-1..3</code>), moves run to <code>planning</code>.</li>
+        <li>Worker assigns slot worktree and branch <code>codex/run-&lt;run_id&gt;</code>.</li>
+        <li>Worker runs Codex command inside that worktree only, then required checks.</li>
+        <li>On success run transitions to <code>preview_ready</code>; on failure to <code>failed</code> with reason
+          code.</li>
+        <li>Reviewer approves/rejects; approval triggers merge gate checks + merge path.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>3) How Worktrees Are Used</h2>
+      <h3>Slot model</h3>
+      <ul>
+        <li>Exactly 3 preview slots by default: <code>preview-1</code>, <code>preview-2</code>, <code>preview-3</code>.
+        </li>
+        <li>Lease has TTL and heartbeat; stale leases are expired/reaped.</li>
+        <li>If all slots are leased, run stays queued with <code>WAITING_FOR_SLOT</code>.</li>
+      </ul>
+      <h3>Branch and path binding</h3>
+      <ul>
+        <li>Each run branch is deterministic: <code>codex/run-&lt;run_id&gt;</code>.</li>
+        <li>Each slot has one worktree path under configured root (default <code>/srv/oroboros/worktrees</code>).</li>
+        <li>Binding is persisted (<code>slot_worktree_bindings</code>) and tracked in events/audit logs.</li>
+      </ul>
+      <p class="hint">
+        This gives isolation between parallel runs: no direct edits on <code>main</code> during run execution.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>4) Recovery From Bad States</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Failure Mode</th>
+              <th>What Happens</th>
+              <th>Recovery Path</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Worker timeout</td>
+              <td>Run transitions to <code>failed</code> with <code>AGENT_TIMEOUT</code>.</td>
+              <td><code>/api/runs/{run_id}/resume</code> creates child run when reason is recoverable.</td>
+            </tr>
+            <tr>
+              <td>Lease expired</td>
+              <td>Heartbeat rejects lease, run can move to failed/expired path, slot released.</td>
+              <td>Lease reaper + resume/retry flow.</td>
+            </tr>
+            <tr>
+              <td>Checks failed</td>
+              <td>Run moves to <code>failed</code> with <code>CHECKS_FAILED</code> and failed check metadata.</td>
+              <td>Fix code, then <code>retry</code> child run.</td>
+            </tr>
+            <tr>
+              <td>Canceled run</td>
+              <td>Cancel endpoint transitions to <code>canceled</code>, attempts cleanup + lease release.</td>
+              <td>Submit new run if needed.</td>
+            </tr>
+            <tr>
+              <td>Deploy health fails</td>
+              <td>Deploy script supports automatic symlink rollback to previous release.</td>
+              <td><code>scripts/rollback.sh &lt;release_id&gt;</code> and health gate rerun.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>5) What Tests Cover Right Now</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Layer</th>
+              <th>Covered</th>
+              <th>Not Fully Covered Yet</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Backend API</td>
+              <td>Run resilience (cancel/retry/resume), approval + merge gate behavior, event stream/schema, metrics.
+              </td>
+              <td>Deeper end-to-end deploy orchestration on real host, broader route-level integration tests.</td>
+            </tr>
+            <tr>
+              <td>Worker</td>
+              <td>Claim path, slot/worktree assignment behavior, validation pipeline outcomes, timeout/cancel semantics,
+                guardrails.</td>
+              <td>Large-scale concurrency soak tests, full real-world Codex command behavior under load.</td>
+            </tr>
+            <tr>
+              <td>Frontend</td>
+              <td>Utility logic (status chips, diff parsing, failure reason extraction, route helpers).</td>
+              <td>Component-level/UI automation tests for full user flows.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="small">
+        Default required checks in worker/merge gate are currently <code>lint,test,smoke</code> and are configurable via
+        environment variables.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>6) How It Adds New Features Across Frontend + Backend</h2>
+      <ol>
+        <li>Create one run with a prompt that describes both API/data changes and UI behavior.</li>
+        <li>Agent edits both stacks inside one run worktree branch.</li>
+        <li>Validation checks run; reviewer inspects run details (diff/checks/events).</li>
+        <li>Approval triggers final checks pinned to expected commit SHA, then merge.</li>
+      </ol>
+      <p>
+        Because the repo is a monorepo, one run can include backend + frontend + worker updates in one coherent
+        commit lineage.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>7) Can It Edit Other Apps On The Same Server?</h2>
+      <p><span class="good">By default: effectively no, by design intent.</span></p>
+      <ul>
+        <li>Worker executes in configured worktree root (<code>WORKER_ALLOWED_PATHS</code> default
+          <code>/srv/oroboros/worktrees</code>).
+        </li>
+        <li>Worker command allowlist blocks arbitrary executables and blocks shell wrappers explicitly.</li>
+        <li>Systemd hardening constrains writable paths to worktrees/artifacts/tmp for the worker service user.</li>
+      </ul>
+      <p><span class="warn">Important caveat:</span> this is strong host hardening, not a full VM/container sandbox.</p>
+      <ul>
+        <li>If allowlists are loosened too much, blast radius increases.</li>
+        <li>If you run worker manually outside systemd hardening, protections are weaker.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>8) Guardrails That Protect The Server</h2>
+      <ul>
+        <li><strong>Command allowlist:</strong> blocks non-approved executables; disallows <code>bash/sh/zsh</code>
+          wrappers.</li>
+        <li><strong>Path allowlist:</strong> enforces worker <code>cwd</code> under approved roots.</li>
+        <li><strong>Env isolation:</strong> preview subprocess inherits allowlisted vars and strips sensitive secret
+          keys.</li>
+        <li><strong>Least privilege OS user:</strong> worker runs as dedicated low-privilege account via systemd.</li>
+        <li><strong>State machine enforcement:</strong> invalid status transitions are rejected server-side.</li>
+        <li><strong>Merge gate commit pin:</strong> merge checks validate exact expected commit SHA to avoid drift.</li>
+        <li><strong>Audit trail:</strong> run events + audit logs + structured traces for forensic visibility.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>9) Current Practical Limits</h2>
+      <ul>
+        <li>Max active previews are tied to slot count (default 3).</li>
+        <li>Deploy lifecycle is represented in run status/events; host deploy/rollback scripts exist separately.</li>
+        <li>Frontend checks are not as deep by default as backend/worker checks unless you extend required checks.</li>
+        <li>No container isolation; security posture depends on strict host config and disciplined operations.</li>
+      </ul>
+      <p class="hint">
+        Recommended next hardening step: add frontend integration tests to required checks and run health-gated deploy
+        script as part of approved merge workflow.
+      </p>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const dropdown = document.querySelector("[data-docs-menu]");
+      if (!dropdown) return;
+
+      const trigger = dropdown.querySelector(".top-trigger");
+      const panel = dropdown.querySelector(".top-panel");
+      if (!trigger || !panel) return;
+
+      const closeMenu = () => {
+        panel.classList.remove("is-open");
+        trigger.setAttribute("aria-expanded", "false");
+      };
+
+      trigger.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const next = !panel.classList.contains("is-open");
+        panel.classList.toggle("is-open", next);
+        trigger.setAttribute("aria-expanded", String(next));
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!dropdown.contains(event.target)) {
+          closeMenu();
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeMenu();
+        }
+      });
+
+      panel.querySelectorAll("a").forEach((link) => {
+        link.addEventListener("click", closeMenu);
+      });
+
+      const current = window.location.pathname;
+      document.querySelectorAll(".top-link, .top-panel a").forEach((link) => {
+        if (link.getAttribute("href") === current) {
+          link.classList.add("is-active");
+        }
+      });
+    })();
+  </script>
+</body>
+
+</html>

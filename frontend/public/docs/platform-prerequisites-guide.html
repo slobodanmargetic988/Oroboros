@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ouroboros Platform Prerequisites</title>
+  <style>
+    :root {
+      --bg: #f3f7fc;
+      --panel: #ffffff;
+      --ink: #16233e;
+      --muted: #556487;
+      --line: #d8e3f2;
+      --brand: #0f54ff;
+      --brand-soft: #e9efff;
+      --ok: #0f6d3a;
+      --warn: #8a5400;
+      --bad: #a32828;
+      --shadow: 0 16px 38px rgba(22, 45, 89, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+      color: var(--ink);
+      line-height: 1.56;
+      background:
+        radial-gradient(950px 470px at 95% -10%, #dbe9ff 0%, transparent 62%),
+        radial-gradient(850px 430px at -12% 0%, #ebf3ff 0%, transparent 58%),
+        var(--bg);
+    }
+
+    .top-menu {
+      position: sticky;
+      top: 0;
+      z-index: 90;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.97);
+      backdrop-filter: blur(6px);
+      padding: 0.55rem 1rem;
+    }
+
+    .top-menu-inner {
+      width: min(1220px, calc(100% - 2rem));
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+
+    .top-link,
+    .top-trigger {
+      display: inline-block;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      background: #f8fafc;
+      color: #0f172a;
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.45rem 0.7rem;
+      cursor: pointer;
+      font-family: inherit;
+      line-height: 1.2;
+    }
+
+    .top-link:hover,
+    .top-trigger:hover {
+      background: #eff6ff;
+      color: #1e40af;
+    }
+
+    .top-link.is-active {
+      border-color: #93c5fd;
+      color: #1e3a8a;
+    }
+
+    .top-dropdown {
+      position: relative;
+    }
+
+    .top-caret {
+      margin-left: 0.3rem;
+    }
+
+    .top-panel {
+      position: absolute;
+      z-index: 20;
+      margin-top: 0.45rem;
+      min-width: 280px;
+      display: none;
+      gap: 0.2rem;
+      border: 1px solid #d8e2ec;
+      border-radius: 10px;
+      background: #ffffff;
+      box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+      padding: 0.4rem;
+    }
+
+    .top-panel.is-open {
+      display: grid;
+    }
+
+    .top-panel a {
+      color: #1e293b;
+      text-decoration: none;
+      border-radius: 8px;
+      padding: 0.42rem 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .top-panel a:hover,
+    .top-panel a.is-active {
+      background: #eff6ff;
+      color: #1e40af;
+    }
+
+    .wrap {
+      width: min(1220px, calc(100% - 2rem));
+      margin: 1.75rem auto 3rem;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      background: linear-gradient(130deg, #f8fbff 0%, #edf3ff 100%);
+      padding: 2rem;
+    }
+
+    .hero-mark {
+      position: absolute;
+      top: 0px;
+      right: 28px;
+      width: auto;
+      max-width: clamp(170px, 19vw, 250px);
+      height: auto;
+      max-height: 100%;
+      opacity: 0.42;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .hero> :not(.hero-mark) {
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      margin: 0 0 0.35rem;
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: #2248a1;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.75rem, 3.5vw, 2.6rem);
+      line-height: 1.15;
+    }
+
+    .lead {
+      margin: 0.85rem 0 0;
+      color: #30446d;
+      max-width: 98ch;
+    }
+
+    .section {
+      margin-top: 1.1rem;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 1.15rem;
+    }
+
+    .section h2 {
+      margin: 0 0 0.55rem;
+      font-size: 1.22rem;
+    }
+
+    .section h3 {
+      margin: 0.8rem 0 0.35rem;
+      font-size: 1.04rem;
+    }
+
+    p {
+      margin: 0.35rem 0;
+    }
+
+    ul,
+    ol {
+      margin: 0.45rem 0 0;
+      padding-left: 1.2rem;
+    }
+
+    li {
+      margin-bottom: 0.45rem;
+    }
+
+    .grid {
+      margin-top: 0.65rem;
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.8rem;
+      background: #fcfdff;
+    }
+
+    .card h4 {
+      margin: 0 0 0.3rem;
+      font-size: 0.98rem;
+    }
+
+    .hint {
+      margin-top: 0.7rem;
+      border-left: 3px solid var(--brand);
+      background: var(--brand-soft);
+      color: #1b3568;
+      border-radius: 8px;
+      padding: 0.65rem 0.75rem;
+    }
+
+    pre {
+      margin: 0.5rem 0 0;
+      border: 1px solid #d6e0f3;
+      border-radius: 10px;
+      background: #f4f8ff;
+      padding: 0.72rem;
+      overflow-x: auto;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem;
+      padding: 0.04rem 0.35rem;
+      border-radius: 6px;
+      border: 1px solid #d6e0f4;
+      background: #f3f7ff;
+    }
+
+    .ok {
+      color: var(--ok);
+      font-weight: 600;
+    }
+
+    .warn {
+      color: var(--warn);
+      font-weight: 600;
+    }
+
+    .bad {
+      color: var(--bad);
+      font-weight: 600;
+    }
+
+    .small {
+      color: #657497;
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 720px) {
+      .hero-mark {
+        width: 132px;
+        top: 16px;
+        right: 16px;
+        opacity: 0.3;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <nav class="top-menu" aria-label="Ouroboros navigation">
+    <div class="top-menu-inner">
+      <a class="top-link" href="/codex">Codex Inbox</a>
+      <div class="top-dropdown" data-docs-menu>
+        <button type="button" class="top-trigger" aria-haspopup="true" aria-expanded="false">
+          Guides <span class="top-caret">▾</span>
+        </button>
+        <div class="top-panel" role="menu">
+          <a href="/docs/public-user-guide.html">Public User Guide</a>
+          <a href="/docs/developer-architecture-guide.html">Developer Architecture Guide</a>
+          <a href="/docs/configuration-guide.html">Configuration Guide</a>
+          <a href="/docs/platform-prerequisites-guide.html">Platform Prerequisites Guide</a>
+          <a href="/docs/database-usage-guide.html">Database Usage Guide</a>
+          <a href="/docs/faq.html">FAQ</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <header class="hero">
+      <img class="hero-mark" src="../Ouroboros.png" alt="" />
+      <p class="eyebrow">Ouroboros</p>
+      <h1>Platform Prerequisites Guide</h1>
+      <p class="lead">
+        This document lists what must be preinstalled for Ouroboros to run, with separate expectations for Linux,
+        macOS, and Windows.
+      </p>
+    </header>
+
+    <section class="section">
+      <h2>1) Reality Check: Support Levels</h2>
+      <div class="grid">
+        <article class="card">
+          <h4>Linux (full runtime)</h4>
+          <p class="ok">Best-supported path for full host runtime with systemd services, deploy, rollback, and
+            maintenance timers.</p>
+        </article>
+        <article class="card">
+          <h4>macOS (development mode)</h4>
+          <p class="warn">Supported for manual local run (backend + worker + web surfaces). systemd scripts are not
+            native on macOS.</p>
+        </article>
+        <article class="card">
+          <h4>Windows (recommended via WSL2)</h4>
+          <p class="warn">Use WSL2 Ubuntu for closest behavior. Native Windows can run parts, but full host flow is less
+            practical.</p>
+        </article>
+      </div>
+      <p class="hint">No Docker is required by this project’s intended runtime model.</p>
+    </section>
+
+    <section class="section">
+      <h2>2) Common Prerequisites (All Platforms)</h2>
+      <ul>
+        <li><strong>Git</strong> (for repo, branches, worktrees, merge operations)</li>
+        <li><strong>Python 3.11+</strong> (backend + worker + scripts)</li>
+        <li><strong>Node.js 20+</strong> and <strong>npm</strong> (frontend build/test)</li>
+        <li><strong>PostgreSQL</strong> (control-plane DB)</li>
+        <li><strong>Redis</strong> (worker/runtime dependency)</li>
+        <li><strong>Caddy</strong> (reverse proxy for host-routed setup)</li>
+        <li><strong>curl</strong> (health checks and script probes)</li>
+      </ul>
+      <h3>Quick verify commands</h3>
+      <pre><code>git --version
+python3 --version
+node --version
+npm --version
+psql --version
+redis-server --version
+caddy version
+curl --version</code></pre>
+    </section>
+
+    <section class="section">
+      <h2>3) Linux Prerequisites (Full Host Runtime)</h2>
+      <p class="ok">This is the only platform where the full systemd-based runtime flow is first-class.</p>
+      <h3>Required</h3>
+      <ul>
+        <li><strong>systemd</strong> and <strong>systemctl</strong></li>
+        <li><strong>sudo</strong> privileges (install scripts write to <code>/etc</code> and <code>/srv</code>)</li>
+        <li>user/group management tools: <code>useradd</code>, <code>groupadd</code>, <code>id</code>,
+          <code>getent</code>
+        </li>
+        <li><code>pg_isready</code> and <code>redis-cli</code> for health checks</li>
+        <li>service users expected by units: <code>oroboros</code>, <code>oroboros-worker</code>, <code>caddy</code>
+        </li>
+      </ul>
+      <h3>Useful host checks</h3>
+      <pre><code>systemctl --version
+which useradd groupadd getent
+pg_isready --version
+redis-cli --version</code></pre>
+      <p class="small">
+        Full runtime scripts in this repo (<code>scripts/systemd-install-runtime.sh</code>,
+        <code>scripts/runtime-up.sh</code>,
+        <code>scripts/deploy.sh</code>, <code>scripts/rollback.sh</code>) assume this Linux host model.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>4) macOS Prerequisites (Development Mode)</h2>
+      <p>
+        macOS is practical for local development and manual process orchestration, but not native systemd service
+        management.
+      </p>
+      <h3>Required</h3>
+      <ul>
+        <li>Git, Python 3.11+, Node.js 20+, npm</li>
+        <li>PostgreSQL and Redis running locally</li>
+        <li>Caddy installed if you want host-routed preview proxy behavior</li>
+      </ul>
+      <h3>Optional but recommended</h3>
+      <ul>
+        <li>Xcode Command Line Tools for native build dependencies</li>
+        <li>Homebrew for package management consistency</li>
+      </ul>
+      <h3>Typical run mode on macOS (manual multi-process)</h3>
+      <p>
+        In practice, you usually run <strong>7 app processes</strong> in separate terminals:
+        backend, worker, web-main, web-preview-1, web-preview-2, web-preview-3, and caddy.
+      </p>
+      <p class="small">
+        Postgres and Redis must also already be running (for example, as background services).
+      </p>
+      <pre><code># Terminal 1: backend (with reload during development)
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+# Terminal 2: worker
+cd ../worker
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+python -m worker.main
+
+# Terminal 3: web-main static surface
+cd ..
+python3 scripts/run-web-surface.py --root infra/web-main --port 3100
+
+# Terminal 4: web-preview-1
+python3 scripts/run-web-surface.py --root infra/web-preview-1 --port 3101
+
+# Terminal 5: web-preview-2
+python3 scripts/run-web-surface.py --root infra/web-preview-2 --port 3102
+
+# Terminal 6: web-preview-3
+python3 scripts/run-web-surface.py --root infra/web-preview-3 --port 3103
+
+# Terminal 7: caddy reverse proxy (host routing on :8088)
+caddy run --config infra/caddy/Caddyfile --adapter caddyfile</code></pre>
+      <p class="small">
+        If <code>caddy</code> is not in PATH, use your installed binary path (for example
+        <code>/opt/homebrew/bin/caddy</code> on Apple Silicon Homebrew setups).
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>5) Windows Prerequisites</h2>
+      <h3>Recommended path: WSL2 + Ubuntu</h3>
+      <ul>
+        <li>Install WSL2 and Ubuntu</li>
+        <li>Inside WSL: use Linux prerequisites and scripts</li>
+        <li>This gives behavior closest to production host flow</li>
+      </ul>
+      <h3>Native Windows (partial/manual)</h3>
+      <ul>
+        <li>You can run backend/worker/frontend with Python + Node + Postgres + Redis</li>
+        <li>Most <code>.sh</code> scripts and systemd unit workflows are not directly usable in native PowerShell/CMD
+        </li>
+        <li>Caddy can run on Windows, but host-service orchestration differs from Linux</li>
+      </ul>
+      <p class="warn">
+        If your goal is realistic deployment parity, use WSL2 Linux rather than native Windows service orchestration.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>6) What Is Needed For “Just Build And Test” vs “Full Runtime”</h2>
+      <div class="grid">
+        <article class="card">
+          <h4>Build/Test only</h4>
+          <ul>
+            <li>Git, Python 3.11+, Node 20+, npm</li>
+            <li>Project venv installs</li>
+            <li>Postgres + Redis if running integration/API flows</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h4>Run app locally (manual)</h4>
+          <ul>
+            <li>Everything above</li>
+            <li>Caddy if you want host-routed checks on <code>:8088</code></li>
+            <li>multiple terminals/process supervision</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h4>Full production-like runtime</h4>
+          <ul>
+            <li>Everything above</li>
+            <li>Linux + systemd + sudo + service users</li>
+            <li><code>/srv/oroboros</code> and <code>/etc/oroboros</code> layout</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>7) Ports and Services You Should Expect</h2>
+      <ul>
+        <li>API: <code>127.0.0.1:8000</code></li>
+        <li>Worker health: <code>127.0.0.1:8090</code></li>
+        <li>Main web: <code>127.0.0.1:3100</code></li>
+        <li>Preview web: <code>127.0.0.1:3101</code>, <code>3102</code>, <code>3103</code></li>
+        <li>Proxy/router (Caddy): <code>127.0.0.1:8088</code></li>
+        <li>Postgres: <code>127.0.0.1:5432</code></li>
+        <li>Redis: <code>127.0.0.1:6379</code></li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>8) Preflight Checklist Before First Run</h2>
+      <ol>
+        <li>All required binaries return versions successfully.</li>
+        <li>Postgres + Redis are running and reachable.</li>
+        <li>Env files are copied from examples and adjusted for local machine paths.</li>
+        <li>Backend DB bootstrap completes without error.</li>
+        <li>Health endpoints respond once services start.</li>
+      </ol>
+      <pre><code>cp .env.example .env
+cp backend/.env.example backend/.env
+cp worker/.env.example worker/.env
+./scripts/db-bootstrap.sh</code></pre>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const dropdown = document.querySelector("[data-docs-menu]");
+      if (!dropdown) return;
+
+      const trigger = dropdown.querySelector(".top-trigger");
+      const panel = dropdown.querySelector(".top-panel");
+      if (!trigger || !panel) return;
+
+      const closeMenu = () => {
+        panel.classList.remove("is-open");
+        trigger.setAttribute("aria-expanded", "false");
+      };
+
+      trigger.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const next = !panel.classList.contains("is-open");
+        panel.classList.toggle("is-open", next);
+        trigger.setAttribute("aria-expanded", String(next));
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!dropdown.contains(event.target)) {
+          closeMenu();
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeMenu();
+        }
+      });
+
+      panel.querySelectorAll("a").forEach((link) => {
+        link.addEventListener("click", closeMenu);
+      });
+
+      const current = window.location.pathname;
+      document.querySelectorAll(".top-link, .top-panel a").forEach((link) => {
+        if (link.getAttribute("href") === current) {
+          link.classList.add("is-active");
+        }
+      });
+    })();
+  </script>
+</body>
+
+</html>

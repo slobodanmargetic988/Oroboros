@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ouroboros Configuration Guide</title>
+  <style>
+    :root {
+      --bg: #f2f6fc;
+      --panel: #ffffff;
+      --ink: #16223d;
+      --muted: #52628a;
+      --line: #d8e2f2;
+      --brand: #0f54ff;
+      --brand-soft: #e8efff;
+      --ok: #0d6d3a;
+      --warn: #8a5200;
+      --bad: #a42424;
+      --shadow: 0 18px 40px rgba(22, 43, 87, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+      color: var(--ink);
+      line-height: 1.56;
+      background:
+        radial-gradient(960px 480px at 92% -10%, #dce8ff 0%, transparent 60%),
+        radial-gradient(820px 420px at -12% 0%, #eaf2ff 0%, transparent 58%),
+        var(--bg);
+    }
+
+    .top-menu {
+      position: sticky;
+      top: 0;
+      z-index: 90;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.97);
+      backdrop-filter: blur(6px);
+      padding: 0.55rem 1rem;
+    }
+
+    .top-menu-inner {
+      width: min(1220px, calc(100% - 2rem));
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+
+    .top-link,
+    .top-trigger {
+      display: inline-block;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      background: #f8fafc;
+      color: #0f172a;
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.45rem 0.7rem;
+      cursor: pointer;
+      font-family: inherit;
+      line-height: 1.2;
+    }
+
+    .top-link:hover,
+    .top-trigger:hover {
+      background: #eff6ff;
+      color: #1e40af;
+    }
+
+    .top-link.is-active {
+      border-color: #93c5fd;
+      color: #1e3a8a;
+    }
+
+    .top-dropdown {
+      position: relative;
+    }
+
+    .top-caret {
+      margin-left: 0.3rem;
+    }
+
+    .top-panel {
+      position: absolute;
+      z-index: 20;
+      margin-top: 0.45rem;
+      min-width: 280px;
+      display: none;
+      gap: 0.2rem;
+      border: 1px solid #d8e2ec;
+      border-radius: 10px;
+      background: #ffffff;
+      box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+      padding: 0.4rem;
+    }
+
+    .top-panel.is-open {
+      display: grid;
+    }
+
+    .top-panel a {
+      color: #1e293b;
+      text-decoration: none;
+      border-radius: 8px;
+      padding: 0.42rem 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .top-panel a:hover,
+    .top-panel a.is-active {
+      background: #eff6ff;
+      color: #1e40af;
+    }
+
+    .wrap {
+      width: min(1220px, calc(100% - 2rem));
+      margin: 1.75rem auto 3rem;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: linear-gradient(130deg, #f8fbff 0%, #edf3ff 100%);
+      box-shadow: var(--shadow);
+      padding: 2rem;
+    }
+
+    .hero-mark {
+      position: absolute;
+      top: 0px;
+      right: 28px;
+      width: auto;
+      max-width: clamp(170px, 19vw, 250px);
+      height: auto;
+      max-height: 100%;
+      opacity: 0.42;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .hero> :not(.hero-mark) {
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      margin: 0 0 0.35rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #1f469f;
+    }
+
+    h1 {
+      margin: 0;
+      line-height: 1.15;
+      font-size: clamp(1.75rem, 3.6vw, 2.65rem);
+    }
+
+    .lead {
+      margin: 0.8rem 0 0;
+      max-width: 98ch;
+      color: #30426b;
+    }
+
+    .section {
+      margin-top: 1.1rem;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 1.15rem;
+    }
+
+    .section h2 {
+      margin: 0 0 0.55rem;
+      font-size: 1.22rem;
+    }
+
+    .section h3 {
+      margin: 0.8rem 0 0.35rem;
+      font-size: 1.04rem;
+    }
+
+    p {
+      margin: 0.35rem 0;
+    }
+
+    ul,
+    ol {
+      margin: 0.45rem 0 0;
+      padding-left: 1.2rem;
+    }
+
+    li {
+      margin-bottom: 0.45rem;
+    }
+
+    .grid {
+      margin-top: 0.65rem;
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fcfdff;
+      padding: 0.8rem;
+    }
+
+    .card h4 {
+      margin: 0 0 0.3rem;
+      font-size: 0.98rem;
+    }
+
+    .hint {
+      margin-top: 0.7rem;
+      border-left: 3px solid var(--brand);
+      background: var(--brand-soft);
+      color: #183266;
+      border-radius: 8px;
+      padding: 0.65rem 0.75rem;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 760px;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      padding: 0.55rem;
+      font-size: 0.93rem;
+    }
+
+    th {
+      background: #f2f7ff;
+    }
+
+    pre {
+      margin: 0.5rem 0 0;
+      border: 1px solid #d5e0f4;
+      border-radius: 10px;
+      background: #f5f8ff;
+      padding: 0.7rem;
+      overflow-x: auto;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem;
+      border-radius: 6px;
+      border: 1px solid #d6e0f4;
+      background: #f3f7ff;
+      padding: 0.04rem 0.35rem;
+    }
+
+    .ok {
+      color: var(--ok);
+      font-weight: 600;
+    }
+
+    .warn {
+      color: var(--warn);
+      font-weight: 600;
+    }
+
+    .bad {
+      color: var(--bad);
+      font-weight: 600;
+    }
+
+    .small {
+      color: #67769a;
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 720px) {
+      .hero-mark {
+        width: 132px;
+        top: 16px;
+        right: 16px;
+        opacity: 0.3;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <nav class="top-menu" aria-label="Ouroboros navigation">
+    <div class="top-menu-inner">
+      <a class="top-link" href="/codex">Codex Inbox</a>
+      <div class="top-dropdown" data-docs-menu>
+        <button type="button" class="top-trigger" aria-haspopup="true" aria-expanded="false">
+          Guides <span class="top-caret">▾</span>
+        </button>
+        <div class="top-panel" role="menu">
+          <a href="/docs/public-user-guide.html">Public User Guide</a>
+          <a href="/docs/developer-architecture-guide.html">Developer Architecture Guide</a>
+          <a href="/docs/configuration-guide.html">Configuration Guide</a>
+          <a href="/docs/platform-prerequisites-guide.html">Platform Prerequisites Guide</a>
+          <a href="/docs/database-usage-guide.html">Database Usage Guide</a>
+          <a href="/docs/faq.html">FAQ</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <header class="hero">
+      <img class="hero-mark" src="../Ouroboros.png" alt="" />
+      <p class="eyebrow">Ouroboros</p>
+      <h1>Configuration Guide</h1>
+      <p class="lead">
+        This guide explains what is configurable, where to change it, recommended ranges, and copy-paste examples.
+        It covers local development and host runtime configuration.
+      </p>
+    </header>
+
+    <section class="section">
+      <h2>1) Where Configuration Lives</h2>
+      <div class="grid">
+        <article class="card">
+          <h4>Local quick start files</h4>
+          <p><code>.env</code>, <code>backend/.env</code>, <code>worker/.env</code>, <code>frontend/.env</code></p>
+        </article>
+        <article class="card">
+          <h4>Host runtime (systemd)</h4>
+          <p><code>/etc/oroboros/api.env</code>, <code>/etc/oroboros/worker.env</code>,
+            <code>/etc/oroboros/worker-preview.env</code>, <code>/etc/oroboros/web-*.env</code>
+          </p>
+        </article>
+        <article class="card">
+          <h4>Installed defaults</h4>
+          <p>Templates in <code>infra/systemd/env/*.env</code> are copied by
+            <code>scripts/systemd-install-runtime.sh</code>.
+          </p>
+        </article>
+      </div>
+      <p class="hint">
+        Rule of thumb: if the service is managed by systemd, edit <code>/etc/oroboros/*.env</code> and restart that
+        service.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>2) Core Config Matrix</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Area</th>
+              <th>Variable</th>
+              <th>Default</th>
+              <th>How much can it change?</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>API</td>
+              <td><code>DATABASE_URL</code></td>
+              <td><code>postgresql+psycopg://.../builder_control</code></td>
+              <td>Any reachable Postgres DSN.</td>
+            </tr>
+            <tr>
+              <td>API metadata</td>
+              <td><code>APP_NAME</code></td>
+              <td><code>Ouroboros API</code></td>
+              <td>Any string; affects FastAPI app title.</td>
+            </tr>
+            <tr>
+              <td>Slots</td>
+              <td><code>SLOT_IDS_CSV</code></td>
+              <td><code>preview-1,preview-2,preview-3</code></td>
+              <td>List is configurable, but infra/web/proxy must be aligned if count changes.</td>
+            </tr>
+            <tr>
+              <td>Slot TTL</td>
+              <td><code>SLOT_LEASE_TTL_SECONDS</code></td>
+              <td><code>1800</code></td>
+              <td>Lower-bounded to 30 seconds in code.</td>
+            </tr>
+            <tr>
+              <td>Repo/worktree roots</td>
+              <td><code>REPO_ROOT_PATH</code>, <code>WORKTREE_ROOT_PATH</code></td>
+              <td><code>/srv/oroboros/repo</code>, <code>/srv/oroboros/worktrees</code></td>
+              <td>Any valid paths; keep worker allowlists consistent.</td>
+            </tr>
+            <tr>
+              <td>Worker cadence</td>
+              <td><code>WORKER_POLL_INTERVAL_SECONDS</code>, <code>WORKER_HEARTBEAT_SECONDS</code></td>
+              <td><code>5</code>, <code>15</code></td>
+              <td>Heartbeat lower-bounded to 5s in orchestrator.</td>
+            </tr>
+            <tr>
+              <td>Worker loop internals</td>
+              <td><code>WORKER_RUN_POLL_SECONDS</code>, <code>WORKER_CANCEL_CHECK_SECONDS</code></td>
+              <td><code>0.5</code>, <code>2</code></td>
+              <td>Both lower-bounded to 0.2s; controls command polling/cancel checks inside a run.</td>
+            </tr>
+            <tr>
+              <td>Worker runtime limits</td>
+              <td><code>WORKER_RUN_TIMEOUT_SECONDS</code>, <code>WORKER_CHECK_TIMEOUT_SECONDS</code></td>
+              <td><code>1800</code>, <code>900</code></td>
+              <td>Both lower-bounded to 30s in code.</td>
+            </tr>
+            <tr>
+              <td>Worker checks</td>
+              <td><code>WORKER_REQUIRED_CHECKS</code>, <code>WORKER_CHECK_&lt;NAME&gt;_COMMAND</code></td>
+              <td><code>lint,test,smoke</code></td>
+              <td>Add/remove named checks and define command+timeout per check.</td>
+            </tr>
+            <tr>
+              <td>Preview DB reset policy</td>
+              <td><code>WORKER_PREVIEW_RESET_STRATEGY</code>, <code>WORKER_PREVIEW_SEED_VERSION</code>,
+                <code>WORKER_PREVIEW_SNAPSHOT_VERSION</code>, <code>WORKER_PREVIEW_RESET_DRY_RUN</code>
+              </td>
+              <td><code>seed</code>, <code>v1</code>, unset, <code>0</code></td>
+              <td>Controls per-run reset+seed behavior before editing starts in a claimed slot.</td>
+            </tr>
+            <tr>
+              <td>Worker per-check timeout</td>
+              <td><code>WORKER_CHECK_&lt;NAME&gt;_TIMEOUT_SECONDS</code></td>
+              <td>inherits <code>WORKER_CHECK_TIMEOUT_SECONDS</code></td>
+              <td>Per-check override; lower-bounded to 30s.</td>
+            </tr>
+            <tr>
+              <td>Merge gate checks</td>
+              <td><code>MERGE_GATE_REQUIRED_CHECKS</code>, <code>MERGE_GATE_CHECK_&lt;NAME&gt;_COMMAND</code></td>
+              <td>Falls back to worker check list</td>
+              <td>Can be stricter than worker checks before merge.</td>
+            </tr>
+            <tr>
+              <td>Merge gate timeout policy</td>
+              <td><code>MERGE_GATE_CHECK_TIMEOUT_SECONDS</code>,
+                <code>MERGE_GATE_CHECK_&lt;NAME&gt;_TIMEOUT_SECONDS</code>
+              </td>
+              <td><code>900</code> global</td>
+              <td>Global timeout plus per-check override; each lower-bounded to 30s.</td>
+            </tr>
+            <tr>
+              <td>Command policy</td>
+              <td><code>WORKER_ALLOWED_COMMANDS</code></td>
+              <td><code>codex,python,python*,git,npm,node</code></td>
+              <td>Glob patterns allowed, but shell wrappers are always blocked.</td>
+            </tr>
+            <tr>
+              <td>Path policy</td>
+              <td><code>WORKER_ALLOWED_PATHS</code></td>
+              <td><code>/srv/oroboros/worktrees</code></td>
+              <td>Comma-separated roots. Worker subprocess <code>cwd</code> must stay inside these.</td>
+            </tr>
+            <tr>
+              <td>Path fallback root</td>
+              <td><code>WORKER_WORKTREE_ROOT</code></td>
+              <td><code>/srv/oroboros/worktrees</code></td>
+              <td>Used as fallback path root when <code>WORKER_ALLOWED_PATHS</code> is unset.</td>
+            </tr>
+            <tr>
+              <td>Codex invocation</td>
+              <td><code>WORKER_CODEX_COMMAND_TEMPLATE</code>, <code>WORKER_CODEX_BIN</code>,
+                <code>WORKER_CODEX_ARGS</code>
+              </td>
+              <td>template unset, bin <code>codex</code></td>
+              <td>Defines exactly how Codex is launched inside each worktree.</td>
+            </tr>
+            <tr>
+              <td>Backend import path (worker)</td>
+              <td><code>WORKER_BACKEND_PATH</code></td>
+              <td><code>&lt;repo&gt;/backend</code></td>
+              <td>Change only if backend package lives outside default monorepo path.</td>
+            </tr>
+            <tr>
+              <td>Env isolation</td>
+              <td><code>WORKER_SUBPROCESS_ENV_ALLOWLIST</code>, <code>WORKER_SUBPROCESS_ENV_BLOCKLIST</code>,
+                <code>WORKER_PREVIEW_ENV_FILE</code>
+              </td>
+              <td>Allow core runtime vars, block secrets</td>
+              <td>Fully configurable; keep secrets blocked by default.</td>
+            </tr>
+            <tr>
+              <td>Web surface envs</td>
+              <td><code>WEB_ROOT</code>, <code>WEB_PORT</code>, <code>PREVIEW_URL</code>, <code>SLOT_ID</code></td>
+              <td>Set in <code>/etc/oroboros/web-*.env</code></td>
+              <td>Controls static web roots/ports and preview metadata per surface service.</td>
+            </tr>
+            <tr>
+              <td>Frontend runtime</td>
+              <td><code>VITE_API_BASE_URL</code>, <code>VITE_CODEX_USER_ID</code></td>
+              <td><code>http://127.0.0.1:8000</code>, unset</td>
+              <td>Any API origin / optional user id label.</td>
+            </tr>
+            <tr>
+              <td>Structured trace context</td>
+              <td><code>TRACE_ID</code>, <code>RUN_ID</code>, <code>SLOT_ID</code>, <code>OUROBOROS_*</code></td>
+              <td>unset</td>
+              <td>Optional correlation values for deploy/rollback/worker logs.</td>
+            </tr>
+            <tr>
+              <td>Deploy/rollback scripts</td>
+              <td><code>DEPLOY_*</code>, <code>ROLLBACK_*</code></td>
+              <td>Host defaults in scripts</td>
+              <td>Useful for local drills and custom host layouts.</td>
+            </tr>
+            <tr>
+              <td>Registry write toggles</td>
+              <td><code>DEPLOY_SKIP_REGISTRY_UPDATE</code>, <code>ROLLBACK_SKIP_REGISTRY_UPDATE</code></td>
+              <td><code>0</code></td>
+              <td>Set to <code>1</code> to skip release-registry writes (mainly test/drill usage).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>3) How To Apply Changes Safely</h2>
+      <ol>
+        <li>Edit the right env file for your runtime mode.</li>
+        <li>Restart only the affected services.</li>
+        <li>Run health checks.</li>
+        <li>Verify behavior by creating a small test run.</li>
+      </ol>
+      <h3>Systemd-managed host example</h3>
+      <pre><code># 1) edit
+sudo nano /etc/oroboros/worker.env
+
+# 2) restart worker + api if needed
+sudo systemctl restart ouroboros-worker
+sudo systemctl restart ouroboros-api
+
+# 3) verify runtime
+./scripts/runtime-health-check.sh</code></pre>
+    </section>
+
+    <section class="section">
+      <h2>4) Example: Make Frontend Checks Deeper</h2>
+      <p>
+        In the developer guide, this was called out: frontend checks are lighter by default unless you extend required
+        checks. Here is exactly how to do that.
+      </p>
+      <h3>Worker-side checks (preview pipeline)</h3>
+      <pre><code># /etc/oroboros/worker.env
+WORKER_REQUIRED_CHECKS=lint,test,smoke,frontend_unit,frontend_build
+WORKER_CHECK_FRONTEND_UNIT_COMMAND=npm --prefix frontend test -- --run
+WORKER_CHECK_FRONTEND_UNIT_TIMEOUT_SECONDS=1200
+WORKER_CHECK_FRONTEND_BUILD_COMMAND=npm --prefix frontend run build
+WORKER_CHECK_FRONTEND_BUILD_TIMEOUT_SECONDS=1200</code></pre>
+      <h3>Merge gate checks (pre-merge safety)</h3>
+      <pre><code># /etc/oroboros/worker.env (same env consumed by merge gate)
+MERGE_GATE_REQUIRED_CHECKS=lint,test,frontend_unit,frontend_build,smoke
+MERGE_GATE_CHECK_FRONTEND_UNIT_COMMAND=npm --prefix frontend test -- --run
+MERGE_GATE_CHECK_FRONTEND_BUILD_COMMAND=npm --prefix frontend run build</code></pre>
+      <p class="hint">
+        Keep merge gate at least as strict as worker checks for reliable pre-merge protection.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>5) Example: Preview DB Reset Policy</h2>
+      <p>
+        Worker now resets/seeds the preview DB before each claimed run proceeds to editing. Tune strategy and seed
+        inputs here.
+      </p>
+      <pre><code># /etc/oroboros/worker.env
+WORKER_PREVIEW_RESET_STRATEGY=seed
+WORKER_PREVIEW_SEED_VERSION=v1
+# optional for snapshot strategy:
+# WORKER_PREVIEW_SNAPSHOT_VERSION=baseline-2026-02-17
+WORKER_PREVIEW_RESET_DRY_RUN=0</code></pre>
+      <p class="small">
+        If reset fails, the run is failed with <code>MIGRATION_FAILED</code> and the slot lease is released.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>6) Example: Command Allowlist Policy</h2>
+      <p>
+        <strong>What it does:</strong> blocks worker subprocesses unless executable matches allowed patterns.
+        Shell wrappers (<code>bash/sh/zsh/dash/ksh/fish</code>) are blocked even if listed.
+      </p>
+      <h3>Tight policy</h3>
+      <pre><code>WORKER_ALLOWED_COMMANDS=codex,python,python3,git,npm,node</code></pre>
+      <h3>If you need pnpm/pytest</h3>
+      <pre><code>WORKER_ALLOWED_COMMANDS=codex,python,python*,git,npm,node,pnpm,pytest</code></pre>
+      <p class="warn">
+        Do not add broad shell executables to bypass policy. The runner rejects them by design.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>7) Example: Path Allowlist Policy</h2>
+      <p>
+        <strong>What it does:</strong> worker subprocess <code>cwd</code> must be under an allowed root.
+        Out-of-bounds paths fail before process spawn.
+      </p>
+      <h3>Single-root (recommended)</h3>
+      <pre><code>WORKER_ALLOWED_PATHS=/srv/oroboros/worktrees</code></pre>
+      <h3>Multiple allowed roots</h3>
+      <pre><code>WORKER_ALLOWED_PATHS=/srv/oroboros/worktrees,/srv/oroboros/tmp-sandbox</code></pre>
+      <p class="bad">
+        Never set broad roots like <code>/</code> or <code>/srv</code> unless you intentionally accept larger risk.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>8) Example: Preview Subprocess Secret Isolation</h2>
+      <pre><code># /etc/oroboros/worker.env
+WORKER_SUBPROCESS_ENV_ALLOWLIST=PATH,HOME,LANG,LC_ALL,LC_CTYPE,PYTHONPATH,VIRTUAL_ENV,TMPDIR
+WORKER_SUBPROCESS_ENV_BLOCKLIST=DATABASE_URL,REDIS_URL,OPENAI_API_KEY,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,GOOGLE_APPLICATION_CREDENTIALS
+WORKER_PREVIEW_ENV_FILE=/etc/oroboros/worker-preview.env</code></pre>
+      <pre><code># /etc/oroboros/worker-preview.env
+# Preview-safe values only
+PREVIEW_API_BASE_URL=https://api.example.com</code></pre>
+      <p class="small">
+        Keep production-only credentials out of <code>worker-preview.env</code>.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>9) Frontend Configuration</h2>
+      <pre><code># frontend/.env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_CODEX_USER_ID=local-user</code></pre>
+      <p>After frontend env changes, restart the frontend process or rebuild/redeploy web assets.</p>
+    </section>
+
+    <section class="section">
+      <h2>10) Deploy and Rollback Overrides</h2>
+      <p>Useful in staging drills or non-standard layouts.</p>
+      <pre><code># deploy with custom root and no restart (dry flow)
+DEPLOY_ROOT=/tmp/oroboros \
+DEPLOY_SKIP_SERVICE_RESTART=1 \
+DEPLOY_SKIP_HEALTHCHECK=1 \
+./scripts/deploy.sh &lt;commit_sha&gt;
+
+# rollback with custom root and forced health command
+DEPLOY_ROOT=/tmp/oroboros \
+ROLLBACK_SKIP_SERVICE_RESTART=1 \
+ROLLBACK_HEALTHCHECK_CMD='true' \
+./scripts/rollback.sh &lt;release_id&gt;</code></pre>
+    </section>
+
+    <section class="section">
+      <h2>11) Additional Knobs and Gotchas</h2>
+      <ul>
+        <li><strong><code>WORKER_POLL_INTERVAL_SECONDS</code> vs <code>WORKER_RUN_POLL_SECONDS</code>:</strong> first
+          controls worker heartbeat loop in <code>worker.main</code>; second controls command poll interval in
+          orchestrator.</li>
+        <li><strong><code>API_HOST</code>/<code>API_PORT</code> in env files:</strong> these are present in templates,
+          but systemd <code>ExecStart</code> currently pins API to <code>127.0.0.1:8000</code>. Update unit command if
+          you need different bind/port.</li>
+        <li><strong>Changing slot count:</strong> if you change <code>SLOT_IDS_CSV</code>, also provision matching
+          preview services, Caddy routes, web env files, and DB reset mapping expectations.</li>
+        <li><strong>Codex command template:</strong> if you use <code>WORKER_CODEX_COMMAND_TEMPLATE</code>, ensure
+          executable remains in allowlist and command can run non-interactively.</li>
+        <li><strong>Preview smoke harness context:</strong> <code>PREVIEW_SMOKE_CALLER_CWD</code> is set by wrapper
+          script and normally should not be manually set.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>12) Validation Checklist After Any Config Change</h2>
+      <ol>
+        <li><code>./scripts/runtime-health-check.sh</code> passes.</li>
+        <li>Worker starts with no policy errors in logs.</li>
+        <li>Create one small run and confirm expected checks execute.</li>
+        <li>If allowlist/path changed, verify blocked behavior still blocks disallowed commands/paths.</li>
+      </ol>
+      <p class="hint">
+        Start strict, then relax only when there is a concrete need and explicit review.
+      </p>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const dropdown = document.querySelector("[data-docs-menu]");
+      if (!dropdown) return;
+
+      const trigger = dropdown.querySelector(".top-trigger");
+      const panel = dropdown.querySelector(".top-panel");
+      if (!trigger || !panel) return;
+
+      const closeMenu = () => {
+        panel.classList.remove("is-open");
+        trigger.setAttribute("aria-expanded", "false");
+      };
+
+      trigger.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const next = !panel.classList.contains("is-open");
+        panel.classList.toggle("is-open", next);
+        trigger.setAttribute("aria-expanded", String(next));
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!dropdown.contains(event.target)) {
+          closeMenu();
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeMenu();
+        }
+      });
+
+      panel.querySelectorAll("a").forEach((link) => {
+        link.addEventListener("click", closeMenu);
+      });
+
+      const current = window.location.pathname;
+      document.querySelectorAll(".top-link, .top-panel a").forEach((link) => {
+        if (link.getAttribute("href") === current) {
+          link.classList.add("is-active");
+        }
+      });
+    })();
+  </script>
+</body>
+
+</html>
