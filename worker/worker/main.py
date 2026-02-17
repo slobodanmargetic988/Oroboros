@@ -2,6 +2,7 @@ import logging
 import os
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from threading import Thread
 
 from .observability import emit_worker_log
@@ -33,6 +34,22 @@ def configure_logging() -> None:
     )
 
 
+def load_worker_env_defaults() -> None:
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if not env_path.exists() or not env_path.is_file():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        os.environ.setdefault(key, value.strip())
+
+
 def start_health_server() -> None:
     host = os.getenv("WORKER_HEALTH_HOST", "0.0.0.0")
     port = int(os.getenv("WORKER_HEALTH_PORT", "8090"))
@@ -42,6 +59,7 @@ def start_health_server() -> None:
 
 
 def main() -> None:
+    load_worker_env_defaults()
     configure_logging()
     poll_interval = int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "5"))
     orchestrator = WorkerOrchestrator()
