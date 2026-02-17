@@ -111,6 +111,15 @@ def _ensure_branch_exists(repo_path: Path, branch_name: str) -> None:
     _run_git(repo_path, ["branch", branch_name])
 
 
+def _branch_exists(repo_path: Path, branch_name: str) -> bool:
+    proc = _run_git(
+        repo_path,
+        ["show-ref", "--verify", "--quiet", f"refs/heads/{branch_name}"],
+        allow_failure=True,
+    )
+    return proc.returncode == 0
+
+
 def _get_run_or_raise(db: Session, run_id: str) -> Run:
     run = db.query(Run).filter(Run.id == run_id).first()
     if run is None:
@@ -181,7 +190,9 @@ def assign_worktree(db: Session, run_id: str, slot_id: str) -> dict[str, Any]:
         event_type = "worktree_reused"
     else:
         if existing and existing.get("branch") != branch_name:
-            _run_git(repo_path, ["worktree", "remove", resolved_path])
+            # Slot worktrees are ephemeral. Force removal so stale dirty files
+            # cannot block reassignment for the next queued run.
+            _run_git(repo_path, ["worktree", "remove", "--force", resolved_path])
 
         _ensure_branch_exists(repo_path, branch_name)
         registered = _list_registered_worktrees(repo_path)
@@ -261,7 +272,7 @@ def cleanup_worktree(db: Session, slot_id: str, run_id: str | None = None) -> di
     resolved_path = str(Path(binding.worktree_path or "").expanduser().resolve())
     registered = _list_registered_worktrees(repo_path)
     if resolved_path in registered:
-        _run_git(repo_path, ["worktree", "remove", resolved_path])
+        _run_git(repo_path, ["worktree", "remove", "--force", resolved_path])
 
     run = db.query(Run).filter(Run.id == binding.run_id).first() if binding.run_id else None
     now = _utcnow()
@@ -304,6 +315,78 @@ def cleanup_worktree(db: Session, slot_id: str, run_id: str | None = None) -> di
         "worktree_path": worktree_path,
         "reason": None,
     }
+
+
+def delete_run_branch(db: Session, run_id: str, actor_id: str | None = None) -> dict[str, Any]:
+    run = _get_run_or_raise(db, run_id)
+    branch_name = (run.branch_name or "").strip() or _branch_name_for_run_id(run.id)
+    if not branch_name.startswith(BRANCH_PREFIX):
+        raise ValueError("branch_name_conflict")
+
+    repo_path = _repo_root_path()
+    if not (repo_path / ".git").exists():
+        raise ValueError("repo_root_not_found")
+
+    if not _branch_exists(repo_path, branch_name):
+        return {
+            "deleted": False,
+            "run_id": run.id,
+            "branch_name": branch_name,
+            "reason": "branch_not_found",
+        }
+
+    registered = _list_registered_worktrees(repo_path)
+    if any(item.get("branch") == branch_name for item in registered.values()):
+        payload = {
+            "run_id": run.id,
+            "branch_name": branch_name,
+            "reason": "branch_checked_out",
+        }
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="run_branch_delete_skipped",
+            payload=payload,
+            actor_id=actor_id,
+        )
+        append_audit_log(db, action="run.branch.delete_skipped", payload=payload, actor_id=actor_id)
+        return {"deleted": False, **payload}
+
+    proc = _run_git(repo_path, ["branch", "-D", branch_name], allow_failure=True)
+    if proc.returncode != 0:
+        reason = (proc.stderr.strip() or proc.stdout.strip() or "unknown_error").replace("\n", " ")
+        payload = {
+            "run_id": run.id,
+            "branch_name": branch_name,
+            "reason": f"git_command_failed:{reason}",
+        }
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="run_branch_delete_skipped",
+            payload=payload,
+            actor_id=actor_id,
+        )
+        append_audit_log(db, action="run.branch.delete_skipped", payload=payload, actor_id=actor_id)
+        return {"deleted": False, **payload}
+
+    if run.branch_name == branch_name:
+        run.branch_name = None
+
+    payload = {
+        "run_id": run.id,
+        "branch_name": branch_name,
+        "reason": None,
+    }
+    append_run_event(
+        db,
+        run_id=run.id,
+        event_type="run_branch_deleted",
+        payload=payload,
+        actor_id=actor_id,
+    )
+    append_audit_log(db, action="run.branch.deleted", payload=payload, actor_id=actor_id)
+    return {"deleted": True, **payload}
 
 
 def list_worktree_bindings(db: Session) -> list[dict[str, Any]]:

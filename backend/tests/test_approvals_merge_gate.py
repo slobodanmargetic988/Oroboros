@@ -96,7 +96,10 @@ class ApprovalEndpointOrchestrationTests(unittest.TestCase):
 
     def test_reject_transitions_to_failed_with_reason(self) -> None:
         run_id = self._create_run(status="needs_approval")
-        with self.session_factory() as db:
+        with self.session_factory() as db, patch(
+            "app.api.approvals.delete_run_branch",
+            return_value={"deleted": True, "run_id": run_id, "branch_name": "codex/run-test", "reason": None},
+        ) as delete_branch_mock:
             response = reject_run(
                 run_id,
                 RejectRequest(
@@ -110,6 +113,7 @@ class ApprovalEndpointOrchestrationTests(unittest.TestCase):
             run = db.query(Run).filter(Run.id == run_id).first()
             self.assertIsNotNone(run)
             self.assertEqual(run.status, "failed")
+            delete_branch_mock.assert_called_once_with(db=db, run_id=run_id, actor_id=None)
 
 
 class MergeGateCommitPinTests(unittest.TestCase):

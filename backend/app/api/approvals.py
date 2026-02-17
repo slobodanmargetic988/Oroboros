@@ -14,6 +14,7 @@ from app.domain.run_state_machine import (
     ensure_transition_allowed,
 )
 from app.models import Approval, Run
+from app.services.git_worktree_manager import cleanup_worktree, delete_run_branch
 from app.services.merge_gate import merge_run_commit_to_main, run_merge_gate_checks
 from app.services.observability import current_trace_id, emit_structured_log
 from app.services.run_event_log import append_run_event
@@ -327,6 +328,36 @@ def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db
         decision="rejected",
         reason=f"{payload.reason} [failure_reason_code={payload.failure_reason_code.value}]",
     )
+    if run.slot_id:
+        slot_id = run.slot_id
+        try:
+            cleanup_result = cleanup_worktree(db=db, slot_id=slot_id, run_id=run.id)
+        except ValueError as exc:
+            cleanup_result = {"cleaned": False, "slot_id": slot_id, "run_id": run.id, "reason": str(exc)}
+        lease_release_result = release_slot_lease(db=db, slot_id=slot_id, run_id=run.id)
+    else:
+        cleanup_result = {
+            "cleaned": False,
+            "slot_id": None,
+            "run_id": run.id,
+            "reason": "run_slot_not_assigned",
+        }
+        lease_release_result = {
+            "released": False,
+            "slot_id": None,
+            "run_id": run.id,
+            "reason": "run_slot_not_assigned",
+        }
+    try:
+        branch_cleanup_result = delete_run_branch(db=db, run_id=run.id, actor_id=payload.reviewer_id)
+    except ValueError as exc:
+        branch_cleanup_result = {
+            "deleted": False,
+            "run_id": run.id,
+            "branch_name": run.branch_name,
+            "reason": str(exc),
+        }
+
     append_run_event(
         db,
         run_id=run.id,
@@ -354,6 +385,9 @@ def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db
             "source": "reject_endpoint",
             "failure_reason_code": payload.failure_reason_code.value,
             "reason": payload.reason,
+            "resource_cleanup": cleanup_result,
+            "lease_release": lease_release_result,
+            "branch_cleanup": branch_cleanup_result,
             },
             trace_id,
         ),

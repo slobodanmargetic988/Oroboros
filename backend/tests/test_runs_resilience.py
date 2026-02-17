@@ -64,12 +64,16 @@ class RunResilienceApiTests(unittest.TestCase):
         ) as cleanup_mock, patch(
             "app.api.runs.release_slot_lease",
             return_value={"released": True, "slot_id": "preview-1", "run_id": run_id, "reason": None},
-        ) as release_mock:
+        ) as release_mock, patch(
+            "app.api.runs.delete_run_branch",
+            return_value={"deleted": True, "run_id": run_id, "branch_name": "codex/run-editing", "reason": None},
+        ) as delete_branch_mock:
             response = cancel_run(run_id, db)
 
             self.assertEqual(response.status, "canceled")
             cleanup_mock.assert_called_once_with(db=db, slot_id="preview-1", run_id=run_id)
             release_mock.assert_called_once_with(db=db, slot_id="preview-1", run_id=run_id)
+            delete_branch_mock.assert_called_once_with(db=db, run_id=run_id, actor_id=None)
 
             event = (
                 db.query(RunEvent)
