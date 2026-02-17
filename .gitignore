@@ -20,6 +20,8 @@ build/
 .env
 .env.*
 !.env.example
+!frontend/.env.local
+!frontend/.env.production
 
 # Logs
 *.log

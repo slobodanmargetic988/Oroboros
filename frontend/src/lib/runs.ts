@@ -512,11 +512,22 @@ export function extractLatestSlotWaitingReason(events: RunEventItem[]): SlotWait
   return null;
 }
 
+function frontendEnvValue(name: string): string | undefined {
+  const raw = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.[name];
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 export function previewUrlForSlot(slotId: string): string {
+  const previewUrlTemplate = frontendEnvValue("VITE_PREVIEW_URL_TEMPLATE") ?? "http://127.0.0.1:310{slot}";
+  const appUrl = frontendEnvValue("VITE_APP_URL") ?? "http://127.0.0.1:3100";
   const normalized = slotId.trim().toLowerCase();
   const match = normalized.match(/preview-?(\d+)/);
   if (match?.[1]) {
-    return `https://preview${match[1]}.example.com`;
+    return previewUrlTemplate.replace(/\{slot\}/g, match[1]);
   }
-  return "https://app.example.com";
+  return appUrl;
 }
