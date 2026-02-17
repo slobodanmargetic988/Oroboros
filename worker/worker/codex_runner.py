@@ -168,11 +168,20 @@ def build_codex_command(prompt: str, worktree_path: Path) -> list[str]:
         )
         command = shlex.split(rendered)
         if command:
+            # Resolve bare "codex" in templates to an executable path so
+            # worker subprocesses don't depend on inherited PATH contents.
+            executable = command[0].strip()
+            if executable and "/" not in executable and executable == "codex":
+                command[0] = _resolve_codex_binary()
             return command
 
     binary = _resolve_codex_binary()
     args = shlex.split(os.getenv("WORKER_CODEX_ARGS", ""))
-    return [binary, *args, prompt]
+    if args:
+        return [binary, *args, prompt]
+
+    # Default to non-interactive Codex mode so worker runs do not require a TTY.
+    return [binary, "exec", "--full-auto", "--skip-git-repo-check", "--cd", str(worktree_path), prompt]
 
 
 def run_codex_command(
