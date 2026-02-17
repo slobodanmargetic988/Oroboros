@@ -390,6 +390,13 @@
               <td>Any string; affects FastAPI app title.</td>
             </tr>
             <tr>
+              <td>API browser access (CORS)</td>
+              <td><code>CORS_ALLOWED_ORIGINS_CSV</code></td>
+              <td><code>http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:8088,http://localhost:8088</code>
+              </td>
+              <td>Use explicit comma-separated origins. In production, set only real frontend domains.</td>
+            </tr>
+            <tr>
               <td>Slots</td>
               <td><code>SLOT_IDS_CSV</code></td>
               <td><code>preview-1,preview-2,preview-3</code></td>
@@ -644,6 +651,16 @@ PREVIEW_API_BASE_URL=https://api.example.com</code></pre>
 VITE_API_BASE_URL=http://127.0.0.1:8000
 VITE_CODEX_USER_ID=local-user</code></pre>
       <p>After frontend env changes, restart the frontend process or rebuild/redeploy web assets.</p>
+      <h3>Prod CORS + frontend origin example</h3>
+      <pre><code># backend/.env or /etc/oroboros/api.env
+CORS_ALLOWED_ORIGINS_CSV=https://app.example.com,https://staging.example.com
+
+# frontend/.env
+VITE_API_BASE_URL=https://api.example.com</code></pre>
+      <p class="small">
+        If your frontend and API are served from the same origin, CORS can be minimal. If origins differ, this
+        variable is required for browser requests to succeed.
+      </p>
     </section>
 
     <section class="section">
