@@ -1,72 +1,44 @@
 <template>
   <div class="codex-shell">
-    <nav class="codex-menu" aria-label="Ouroboros docs">
-      <ul class="menu-list">
-        <li class="menu-item">
-          <a class="menu-link" href="/home">Home</a>
-        </li>
-        <li class="menu-item">
-          <a class="menu-link menu-link-active" href="/codex">Codex Inbox</a>
-        </li>
-        <li ref="menuContainerRef" class="menu-item">
-          <button
-            type="button"
-            class="menu-trigger"
-            aria-haspopup="true"
-            :aria-expanded="menuOpen ? 'true' : 'false'"
-            @click="toggleMenu"
-          >
-            Guides <span class="menu-caret">▾</span>
-          </button>
-          <div v-if="menuOpen" class="menu-panel">
-            <a href="/docs/public-user-guide.html" @click="closeMenu">Public User Guide</a>
-            <a href="/docs/developer-architecture-guide.html" @click="closeMenu">Developer Architecture Guide</a>
-            <a href="/docs/configuration-guide.html" @click="closeMenu">Configuration Guide</a>
-            <a href="/docs/platform-prerequisites-guide.html" @click="closeMenu">Platform Prerequisites Guide</a>
-            <a href="/docs/database-usage-guide.html" @click="closeMenu">Database Usage Guide</a>
-            <a href="/docs/faq.html" @click="closeMenu">FAQ</a>
-          </div>
-        </li>
-      </ul>
-    </nav>
-
     <div class="codex-page" role="main">
     <header class="hero">
       <div class="hero-art" aria-hidden="true">
         <img src="/Ouroboros.png" alt="" />
       </div>
-      <p class="eyebrow">Ouroboros</p>
-      <h1>Codex Runs Inbox</h1>
-      <p class="subhead">Create a run request, watch status updates, and refresh inbox data in real time.</p>
+      <p class="eyebrow">{{ t("codex.eyebrow") }}</p>
+      <h1>{{ t("codex.title") }}</h1>
+      <p class="subhead">{{ t("codex.subhead") }}</p>
     </header>
 
     <section class="panel">
-      <h2>Create Run</h2>
+      <h2>{{ t("codex.createRun") }}</h2>
       <form class="composer" @submit.prevent="submitPrompt">
         <label>
-          Prompt
-          <textarea v-model="prompt" rows="5" placeholder="Describe the change you want to make" required />
+          {{ t("codex.prompt") }}
+          <textarea v-model="prompt" rows="5" :placeholder="t('codex.promptPlaceholder')" required />
         </label>
 
         <div class="row">
           <label>
-            Route Context
+            {{ t("codex.routeContext") }}
             <input v-model="route" type="text" placeholder="/codex" />
           </label>
           <label>
-            Note
-            <input v-model="note" type="text" placeholder="Optional reviewer note" />
+            {{ t("codex.note") }}
+            <input v-model="note" type="text" :placeholder="t('codex.notePlaceholder')" />
           </label>
         </div>
 
         <label>
-          Metadata (JSON)
+          {{ t("codex.metadata") }}
           <input v-model="metadataText" type="text" placeholder='{"source":"codex-page"}' />
         </label>
 
         <div class="actions">
-          <button :disabled="submitting" type="submit">{{ submitting ? "Submitting..." : "Submit Prompt" }}</button>
-          <span class="hint">POST /api/runs</span>
+          <button :disabled="submitting" type="submit">
+            {{ submitting ? t("common.submitting") : t("codex.submitPrompt") }}
+          </button>
+          <span class="hint">{{ t("codex.apiHint") }}</span>
         </div>
 
         <p v-if="submitError" class="error" role="alert">{{ submitError }}</p>
@@ -76,22 +48,22 @@
 
     <section class="panel" :aria-busy="runsLoading ? 'true' : 'false'">
       <div class="panel-head">
-        <h2>Runs Inbox</h2>
+        <h2>{{ t("codex.runsInbox") }}</h2>
         <div class="panel-controls">
           <label>
-            Status Filter
+            {{ t("codex.statusFilter") }}
             <select v-model="statusFilter" @change="refreshRuns">
-              <option value="">All</option>
+              <option value="">{{ t("common.all") }}</option>
               <option v-for="status in commonStatuses" :key="status" :value="status">{{ status }}</option>
             </select>
           </label>
-          <button type="button" aria-keyshortcuts="Alt+R" @click="refreshRuns">Refresh</button>
+          <button type="button" aria-keyshortcuts="Alt+R" @click="refreshRuns">{{ t("common.refresh") }}</button>
         </div>
       </div>
 
       <div class="route-filter-row">
         <label>
-          Route Filter
+          {{ t("codex.routeFilter") }}
           <input
             v-model="routeFilter"
             type="text"
@@ -99,8 +71,8 @@
             @keyup.enter="applyCurrentRouteFilter"
           />
         </label>
-        <button type="button" @click="applyCurrentRouteFilter">Use Current Route</button>
-        <button type="button" @click="clearRouteFilter">Clear Route Filter</button>
+        <button type="button" @click="applyCurrentRouteFilter">{{ t("codex.useCurrentRoute") }}</button>
+        <button type="button" @click="clearRouteFilter">{{ t("codex.clearRouteFilter") }}</button>
       </div>
 
       <p v-if="runsError" class="error panel-inline-error" role="alert">
@@ -108,19 +80,19 @@
       </p>
 
       <div class="meta-row">
-        <span>Total: {{ total }}</span>
-        <span>Visible: {{ visibleRuns.length }}</span>
-        <span>Occupied slots: {{ occupiedSlotCount }}/{{ slots.length }}</span>
-        <span>Waiting runs: {{ waitingRunsCount }}</span>
-        <span>Offset: {{ offset }}</span>
-        <span>Limit: {{ limit }}</span>
-        <span>Last sync: {{ lastSyncLabel }}</span>
+        <span>{{ t("codex.total") }}: {{ total }}</span>
+        <span>{{ t("codex.visible") }}: {{ visibleRuns.length }}</span>
+        <span>{{ t("codex.occupiedSlots") }}: {{ occupiedSlotCount }}/{{ slots.length }}</span>
+        <span>{{ t("codex.waitingRuns") }}: {{ waitingRunsCount }}</span>
+        <span>{{ t("codex.offset") }}: {{ offset }}</span>
+        <span>{{ t("codex.limit") }}: {{ limit }}</span>
+        <span>{{ t("codex.lastSync") }}: {{ lastSyncLabel }}</span>
       </div>
 
       <div class="slots-panel">
         <div class="slots-head">
-          <p>Preview Slot Occupancy</p>
-          <button type="button" @click="refreshSlotsOnly">Refresh Slots</button>
+          <p>{{ t("codex.slotOccupancy") }}</p>
+          <button type="button" @click="refreshSlotsOnly">{{ t("codex.refreshSlots") }}</button>
         </div>
         <p v-if="slotsError" class="error">{{ slotsError }}</p>
         <ul v-if="slots.length" class="slots-grid">
@@ -130,10 +102,10 @@
               <span :class="slotStateChipClass(slot.state)">{{ slot.state }}</span>
             </div>
             <p v-if="slot.run_id" class="slot-run">
-              Run:
+              {{ t("codex.runLabel") }}:
               <RouterLink :to="`/codex/runs/${slot.run_id}`">{{ slot.run_id }}</RouterLink>
             </p>
-            <p v-else class="slot-run">Run: -</p>
+            <p v-else class="slot-run">{{ t("codex.runLabel") }}: -</p>
             <a
               v-if="slot.run_id && isSlotActive(slot)"
               :href="previewUrlForSlot(slot.slot_id)"
@@ -141,19 +113,19 @@
               rel="noreferrer"
               class="preview-link"
             >
-              Open preview
+              {{ t("codex.openPreview") }}
             </a>
             <p class="slot-meta">
-              Expires: {{ formatTime(slot.expires_at) }}
+              {{ t("codex.expires") }}: {{ formatTime(slot.expires_at) }}
             </p>
           </li>
         </ul>
-        <p v-else class="empty subtle">No slot records available.</p>
+        <p v-else class="empty subtle">{{ t("codex.noSlots") }}</p>
       </div>
 
       <div v-if="currentRouteRuns.length" class="related-panel">
         <p class="related-head">
-          Related to current route <code>{{ currentRoutePath }}</code>
+          {{ t("codex.relatedRoute") }} <code>{{ currentRoutePath }}</code>
         </p>
         <ul class="related-links">
           <li v-for="run in currentRouteRuns.slice(0, 5)" :key="`related-${run.id}`">
@@ -162,23 +134,23 @@
           </li>
         </ul>
       </div>
-      <p v-else-if="!runsLoading && !runsError" class="empty subtle">No route-related runs for this page right now.</p>
+      <p v-else-if="!runsLoading && !runsError" class="empty subtle">{{ t("codex.noRouteRelatedRuns") }}</p>
 
-      <p v-if="runsLoading && !visibleRuns.length && !runsError" class="empty">Loading runs...</p>
+      <p v-if="runsLoading && !visibleRuns.length && !runsError" class="empty">{{ t("codex.loadingRuns") }}</p>
       <ul v-else-if="visibleRuns.length" class="runs-list">
         <li v-for="run in visibleRuns" :key="run.id" class="run-item">
           <div class="run-top">
             <strong>{{ run.title }}</strong>
             <div class="run-actions">
-              <RouterLink class="details-link" :to="`/codex/runs/${run.id}`">View details</RouterLink>
+              <RouterLink class="details-link" :to="`/codex/runs/${run.id}`">{{ t("codex.viewDetails") }}</RouterLink>
               <span :class="statusChipClass(run.status)">{{ run.status }}</span>
             </div>
           </div>
           <p class="run-prompt">{{ run.prompt }}</p>
           <div class="run-meta">
-            <span>ID: {{ run.id }}</span>
-            <span>Route: <code>{{ getRunRoute(run) }}</code></span>
-            <span>Slot: <code>{{ getRunSlot(run) || "-" }}</code></span>
+            <span>{{ t("codex.id") }}: {{ run.id }}</span>
+            <span>{{ t("codex.route") }}: <code>{{ getRunRoute(run) }}</code></span>
+            <span>{{ t("codex.slot") }}: <code>{{ getRunSlot(run) || "-" }}</code></span>
             <a
               v-if="getRunSlot(run)"
               :href="previewUrlForSlot(getRunSlot(run)!)"
@@ -186,21 +158,21 @@
               rel="noreferrer"
               class="preview-link"
             >
-              Open preview
+              {{ t("codex.openPreview") }}
             </a>
             <span v-if="getRunWaitingReasonLabel(run)" class="waiting-badge">
-              Waiting: {{ getRunWaitingReasonLabel(run) }}
+              {{ t("codex.waiting") }}: {{ getRunWaitingReasonLabel(run) }}
             </span>
-            <span v-if="isRunRelatedToRoute(getRunRoute(run), currentRoutePath)" class="route-badge">On this page</span>
-            <span>Note: {{ run.context?.note || "-" }}</span>
+            <span v-if="isRunRelatedToRoute(getRunRoute(run), currentRoutePath)" class="route-badge">{{ t("codex.onThisPage") }}</span>
+            <span>{{ t("codex.noteLabel") }}: {{ run.context?.note || "-" }}</span>
           </div>
         </li>
       </ul>
       <p v-else class="empty">{{ visibleEmptyLabel }}</p>
 
       <div class="pager">
-        <button type="button" :disabled="offset === 0 || runsLoading" @click="prevPage">Previous</button>
-        <button type="button" :disabled="offset + limit >= total || runsLoading" @click="nextPage">Next</button>
+        <button type="button" :disabled="offset === 0 || runsLoading" @click="prevPage">{{ t("codex.previous") }}</button>
+        <button type="button" :disabled="offset + limit >= total || runsLoading" @click="nextPage">{{ t("codex.next") }}</button>
       </div>
     </section>
     </div>
@@ -226,9 +198,11 @@ import {
   previewUrlForSlot,
   statusChipClass,
 } from "../lib/runs";
+import { useI18n } from "../lib/i18n";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 const viewRoute = useRoute();
+const { t } = useI18n();
 
 const prompt = ref("");
 const route = ref("/codex");
@@ -250,8 +224,6 @@ const lastSync = ref<Date | null>(null);
 const slots = ref<SlotStateItem[]>([]);
 const slotsError = ref("");
 const waitingReasonsByRunId = ref<Record<string, SlotWaitingReason>>({});
-const menuOpen = ref(false);
-const menuContainerRef = ref<HTMLElement | null>(null);
 
 const commonStatuses = [
   "queued",
@@ -271,7 +243,7 @@ const commonStatuses = [
 
 const lastSyncLabel = computed(() => {
   if (!lastSync.value) {
-    return "not yet";
+    return t("common.notYet");
   }
   return lastSync.value.toLocaleTimeString();
 });
@@ -298,12 +270,12 @@ const occupiedSlotCount = computed(() => slots.value.filter((slot) => isSlotActi
 const waitingRunsCount = computed(() => Object.keys(waitingReasonsByRunId.value).length);
 const visibleEmptyLabel = computed(() => {
   if (runsError.value) {
-    return "Unable to load runs. Try refresh.";
+    return t("codex.emptyLoadError");
   }
   if (routeFilter.value.trim() || statusFilter.value) {
-    return "No runs found for current filter settings.";
+    return t("codex.emptyFiltered");
   }
-  return "No runs yet. Create a run from the composer above.";
+  return t("codex.emptyNoRuns");
 });
 
 let pollHandle: ReturnType<typeof setInterval> | null = null;
@@ -317,11 +289,11 @@ function parseMetadata(): Record<string, unknown> | undefined {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error("Metadata JSON must be an object");
+      throw new Error(t("codex.metadataObjectError"));
     }
     return parsed as Record<string, unknown>;
   } catch (error) {
-    throw new Error(`Invalid metadata JSON: ${(error as Error).message}`);
+    throw new Error(t("codex.invalidMetadata", { message: (error as Error).message }));
   }
 }
 
@@ -407,7 +379,7 @@ async function submitPrompt() {
 
     prompt.value = "";
     note.value = "";
-    submitSuccess.value = "Run submitted and inbox refreshed.";
+    submitSuccess.value = t("codex.submitSuccess");
     await refreshRuns();
   } catch (error) {
     submitError.value = (error as Error).message;
@@ -560,31 +532,6 @@ function isTypingTarget(event: KeyboardEvent): boolean {
   return tagName === "input" || tagName === "textarea" || target.isContentEditable;
 }
 
-function toggleMenu() {
-  menuOpen.value = !menuOpen.value;
-}
-
-function closeMenu() {
-  menuOpen.value = false;
-}
-
-function handleDocumentClick(event: MouseEvent) {
-  const target = event.target as Node | null;
-  if (!target) {
-    return;
-  }
-  if (menuContainerRef.value?.contains(target)) {
-    return;
-  }
-  closeMenu();
-}
-
-function handleDocumentKeydown(event: KeyboardEvent) {
-  if (event.key === "Escape") {
-    closeMenu();
-  }
-}
-
 async function handleInboxHotkeys(event: KeyboardEvent) {
   if (isTypingTarget(event)) {
     return;
@@ -615,8 +562,6 @@ onMounted(async () => {
     void refreshRuns();
   }, 5000);
   window.addEventListener("keydown", handleInboxHotkeys);
-  document.addEventListener("click", handleDocumentClick);
-  document.addEventListener("keydown", handleDocumentKeydown);
 });
 
 watch(
@@ -633,8 +578,6 @@ onUnmounted(() => {
     clearInterval(pollHandle);
   }
   window.removeEventListener("keydown", handleInboxHotkeys);
-  document.removeEventListener("click", handleDocumentClick);
-  document.removeEventListener("keydown", handleDocumentKeydown);
 });
 </script>
 
@@ -651,95 +594,6 @@ onUnmounted(() => {
   padding: 1.2rem 1.2rem 3rem;
   display: grid;
   gap: 1.2rem;
-}
-
-.codex-menu {
-  position: sticky;
-  top: 0;
-  z-index: 90;
-  border-bottom: 1px solid #d8e2ec;
-  background: rgba(255, 255, 255, 0.98);
-  backdrop-filter: blur(6px);
-  padding: 0.55rem clamp(0.8rem, 3vw, 1.6rem);
-}
-
-.menu-list {
-  list-style: none;
-  margin: 0 auto;
-  padding: 0;
-  max-width: 980px;
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-}
-
-.menu-item {
-  position: relative;
-  display: block;
-}
-
-.menu-trigger {
-  cursor: pointer;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #f8fafc;
-  color: #0f172a;
-  font-size: 0.9rem;
-  font-weight: 600;
-  padding: 0.45rem 0.7rem;
-}
-
-.menu-caret {
-  margin-left: 0.3rem;
-}
-
-.menu-link {
-  display: inline-block;
-  text-decoration: none;
-  color: #0f172a;
-  font-size: 0.9rem;
-  font-weight: 600;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #f8fafc;
-  padding: 0.45rem 0.7rem;
-}
-
-.menu-link:hover {
-  background: #eff6ff;
-  color: #1e40af;
-}
-
-.menu-link-active {
-  border-color: #93c5fd;
-  color: #1e3a8a;
-}
-
-.menu-panel {
-  position: absolute;
-  z-index: 20;
-  margin-top: 0.45rem;
-  min-width: 280px;
-  display: grid;
-  gap: 0.2rem;
-  border: 1px solid #d8e2ec;
-  border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
-  padding: 0.4rem;
-}
-
-.menu-panel a {
-  color: #1e293b;
-  text-decoration: none;
-  border-radius: 8px;
-  padding: 0.42rem 0.5rem;
-  font-size: 0.9rem;
-}
-
-.menu-panel a:hover {
-  background: #eff6ff;
-  color: #1e40af;
 }
 
 @keyframes codex-spin {

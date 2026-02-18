@@ -1,6 +1,6 @@
 <template>
   <div class="notification-root">
-    <section v-if="toasts.length" class="toast-stack" aria-live="polite" aria-label="Run lifecycle notifications">
+    <section v-if="toasts.length" class="toast-stack" aria-live="polite" :aria-label="t('notifications.aria')">
       <article v-for="item in toasts" :key="`toast-${item.id}`" class="toast-item">
         <div class="toast-top">
           <strong>{{ item.title }}</strong>
@@ -8,7 +8,9 @@
         </div>
         <p class="toast-message">{{ item.message }}</p>
         <div class="toast-meta">
-          <RouterLink :to="`/codex/runs/${item.run_id}`" @click="markSeen(item.id)">Open run details</RouterLink>
+          <RouterLink :to="`/codex/runs/${item.run_id}`" @click="markSeen(item.id)">
+            {{ t("notifications.openRunDetails") }}
+          </RouterLink>
           <span :class="statusChipClass(item.status)">{{ item.status }}</span>
         </div>
       </article>
@@ -16,23 +18,23 @@
 
     <aside class="inbox-shell">
       <button type="button" class="inbox-toggle" :aria-expanded="inboxOpen ? 'true' : 'false'" aria-controls="run-notification-inbox" @click="toggleInbox">
-        Notifications
+        {{ t("notifications.toggle") }}
         <span v-if="unseenCount" class="inbox-count">{{ unseenCount }}</span>
       </button>
 
-      <section v-if="inboxOpen" id="run-notification-inbox" class="inbox-panel" aria-label="Notifications inbox">
+      <section v-if="inboxOpen" id="run-notification-inbox" class="inbox-panel" :aria-label="t('notifications.inboxAria')">
         <header class="inbox-head">
-          <p>Run Notifications</p>
+          <p>{{ t("notifications.inboxTitle") }}</p>
           <div class="inbox-actions">
-            <button class="mini-btn" :disabled="!notifications.length" @click="markAllSeen">Mark all seen</button>
-            <button class="mini-btn" :disabled="!notifications.length" @click="clearNotifications">Clear</button>
+            <button class="mini-btn" :disabled="!notifications.length" @click="markAllSeen">{{ t("notifications.markAllSeen") }}</button>
+            <button class="mini-btn" :disabled="!notifications.length" @click="clearNotifications">{{ t("notifications.clear") }}</button>
           </div>
         </header>
 
-        <p class="inbox-user">User: <code>{{ userId }}</code></p>
+        <p class="inbox-user">{{ t("notifications.user") }}: <code>{{ userId }}</code></p>
         <p v-if="loadError" class="inbox-error" role="alert">{{ loadError }}</p>
 
-        <p v-if="loading && !notifications.length" class="empty">Loading notifications...</p>
+        <p v-if="loading && !notifications.length" class="empty">{{ t("notifications.loading") }}</p>
         <ul v-else-if="notifications.length" class="inbox-list">
           <li
             v-for="item in notifications"
@@ -46,11 +48,11 @@
             <p class="inbox-message">{{ item.message }}</p>
             <div class="inbox-item-meta">
               <span>{{ formatDate(item.created_at) }}</span>
-              <button class="mini-btn" :disabled="item.seen" @click="markSeen(item.id)">Mark seen</button>
+              <button class="mini-btn" :disabled="item.seen" @click="markSeen(item.id)">{{ t("notifications.markSeen") }}</button>
             </div>
           </li>
         </ul>
-        <p v-else class="empty">No notifications yet.</p>
+        <p v-else class="empty">{{ t("notifications.empty") }}</p>
       </section>
     </aside>
   </div>
@@ -60,6 +62,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
 import { RunItem, RunListResponse, RunStatus, statusChipClass } from "../lib/runs";
+import { useI18n } from "../lib/i18n";
 
 interface RunNotificationItem {
   id: string;
@@ -85,6 +88,7 @@ const loading = ref(false);
 const loadError = ref("");
 const userId = ref("local-user");
 const previousRunStatusById = ref<Record<string, string>>({});
+const { t } = useI18n();
 
 let initialized = false;
 let pollHandle: ReturnType<typeof setInterval> | null = null;
@@ -132,18 +136,18 @@ function persistNotifications(): void {
 function statusMessage(status: RunStatus): string {
   const normalized = status.toLowerCase();
   if (normalized === "preview_ready") {
-    return "Run is preview-ready and can be reviewed.";
+    return t("notifications.statusPreviewReady");
   }
   if (normalized === "failed") {
-    return "Run failed and needs attention.";
+    return t("notifications.statusFailed");
   }
   if (normalized === "merged") {
-    return "Run was merged successfully.";
+    return t("notifications.statusMerged");
   }
   if (normalized === "canceled") {
-    return "Run was canceled.";
+    return t("notifications.statusCanceled");
   }
-  return `Run transitioned to ${status}.`;
+  return t("notifications.statusFallback", { status });
 }
 
 function createNotificationFromRun(run: RunItem): RunNotificationItem {
@@ -306,7 +310,7 @@ async function refreshRunsForNotifications(): Promise<void> {
 
     previousRunStatusById.value = nextStatusMap;
     if (total > MAX_RUNS_SCAN) {
-      loadError.value = `Notifications truncated to newest ${MAX_RUNS_SCAN} runs.`;
+      loadError.value = t("notifications.truncated", { count: MAX_RUNS_SCAN });
     }
     initialized = true;
   } catch (error) {

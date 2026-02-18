@@ -7,19 +7,19 @@
       aria-controls="route-runs-panel"
       @click="togglePanel"
     >
-      Route Runs
+      {{ t("routeRuns.toggle") }}
       <span class="route-badge-count">{{ relatedRuns.length }}</span>
     </button>
 
     <section v-if="panelOpen" id="route-runs-panel" class="route-badge-panel">
       <div class="route-badge-head">
-        <p class="route-badge-title">Route Runs</p>
-        <button type="button" class="route-badge-minimize" @click="closePanel">Hide</button>
+        <p class="route-badge-title">{{ t("routeRuns.toggle") }}</p>
+        <button type="button" class="route-badge-minimize" @click="closePanel">{{ t("routeRuns.hide") }}</button>
       </div>
       <p class="route-badge-path">{{ normalizedCurrentRoute }}</p>
       <p v-if="loadError" class="route-badge-error" role="alert">{{ loadError }}</p>
 
-      <p v-if="loading && !relatedRuns.length" class="route-badge-empty">Loading route runs...</p>
+      <p v-if="loading && !relatedRuns.length" class="route-badge-empty">{{ t("routeRuns.loading") }}</p>
       <ul v-else-if="relatedRuns.length" class="route-badge-links">
         <li v-for="run in relatedRuns.slice(0, 4)" :key="run.id">
           <RouterLink :to="`/codex/runs/${run.id}`">
@@ -28,14 +28,14 @@
           <span :class="statusChipClass(run.status)">{{ run.status }}</span>
         </li>
       </ul>
-      <p v-else class="route-badge-empty">No runs linked to this route yet.</p>
+      <p v-else class="route-badge-empty">{{ t("routeRuns.empty") }}</p>
 
       <RouterLink
         v-if="relatedRuns.length"
         class="route-badge-more"
         :to="`/codex?route=${encodeURIComponent(normalizedCurrentRoute)}`"
       >
-        Open related runs in inbox
+        {{ t("routeRuns.openRelated") }}
       </RouterLink>
     </section>
   </aside>
@@ -52,11 +52,13 @@ import {
   RunListResponse,
   statusChipClass,
 } from "../lib/runs";
+import { useI18n } from "../lib/i18n";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 const PANEL_OPEN_STORAGE_KEY = "codex.route_runs.open";
 
 const route = useRoute();
+const { t } = useI18n();
 const runs = ref<RunItem[]>([]);
 const loading = ref(false);
 const loadError = ref("");
