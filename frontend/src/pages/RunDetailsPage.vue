@@ -361,6 +361,7 @@ import {
   summarizeChecks,
   ValidationCheckItem,
 } from "../lib/runs";
+import { toActionableRequestError } from "../lib/httpErrors";
 
 interface ApprovalItem {
   id: number;
@@ -547,17 +548,33 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 async function postJson<T>(url: string, payload: Record<string, unknown>): Promise<T> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    throw new Error(toActionableRequestError(error));
+  }
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Request failed (${response.status}) for ${url}: ${detail}`);
+    const rawBody = await response.text();
+    let detail = rawBody.trim();
+    if (rawBody) {
+      try {
+        const parsed = JSON.parse(rawBody) as { detail?: unknown };
+        if (typeof parsed.detail === "string" && parsed.detail.trim()) {
+          detail = parsed.detail.trim();
+        }
+      } catch {
+        // Keep raw text detail when response body isn't JSON.
+      }
+    }
+    throw new Error(`Request failed (${response.status}): ${detail || response.statusText || "unknown_error"}`);
   }
 
   return (await response.json()) as T;
@@ -726,7 +743,7 @@ async function approveRun() {
     rejectReason.value = "";
     await refreshDetails({ silent: true });
   } catch (error) {
-    setActionError((error as Error).message);
+    setActionError(toActionableRequestError(error));
   } finally {
     actionBusy.value = false;
   }
@@ -762,7 +779,7 @@ async function rejectRun() {
     approveReason.value = "";
     await refreshDetails({ silent: true });
   } catch (error) {
-    setActionError((error as Error).message);
+    setActionError(toActionableRequestError(error));
   } finally {
     actionBusy.value = false;
   }
@@ -788,7 +805,7 @@ async function expireRun() {
     setActionSuccess("Run expired with PREVIEW_EXPIRED recoverable reason.");
     await refreshDetails({ silent: true });
   } catch (error) {
-    setActionError((error as Error).message);
+    setActionError(toActionableRequestError(error));
   } finally {
     actionBusy.value = false;
   }
@@ -814,7 +831,7 @@ async function resumeRun() {
     await router.push(`/codex/runs/${child.id}`);
     await refreshDetails();
   } catch (error) {
-    setActionError((error as Error).message);
+    setActionError(toActionableRequestError(error));
   } finally {
     actionBusy.value = false;
   }

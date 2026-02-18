@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -22,7 +23,7 @@ from app.api.approvals import ApproveRequest, RejectRequest, approve_run, reject
 from app.core.config import get_settings
 from app.db.base import Base
 from app.domain.run_state_machine import FailureReasonCode
-from app.models import Approval, AuditLog, Run, ValidationCheck
+from app.models import Approval, AuditLog, Run, User, ValidationCheck
 from app.services.merge_gate import (
     DeployReloadResult,
     GitPushResult,
@@ -180,6 +181,18 @@ class ApprovalEndpointOrchestrationTests(unittest.TestCase):
             self.assertEqual(run.status, "failed")
             reload_mock.assert_not_called()
 
+    def test_approve_rejects_invalid_reviewer_id_with_422(self) -> None:
+        run_id = self._create_run(status="needs_approval")
+        with self.session_factory() as db:
+            with self.assertRaises(HTTPException) as raised:
+                approve_run(
+                    run_id,
+                    ApproveRequest(reviewer_id="not-a-user-id", reason="approve attempt"),
+                    db,
+                )
+            self.assertEqual(raised.exception.status_code, 422)
+            self.assertEqual(raised.exception.detail, "invalid_reviewer_id")
+
     def test_reject_transitions_to_failed_with_reason(self) -> None:
         run_id = self._create_run(status="needs_approval")
         with self.session_factory() as db, patch(
@@ -218,6 +231,49 @@ class ApprovalEndpointOrchestrationTests(unittest.TestCase):
             self.assertIsNotNone(run)
             self.assertEqual(run.status, "merged")
             delete_branch_mock.assert_not_called()
+
+    def test_reject_rejects_invalid_reviewer_id_with_422(self) -> None:
+        run_id = self._create_run(status="needs_approval")
+        with self.session_factory() as db:
+            with self.assertRaises(HTTPException) as raised:
+                reject_run(
+                    run_id,
+                    RejectRequest(
+                        reviewer_id="not-a-user-id",
+                        reason="invalid reviewer",
+                        failure_reason_code=FailureReasonCode.POLICY_REJECTED,
+                    ),
+                    db,
+                )
+            self.assertEqual(raised.exception.status_code, 422)
+            self.assertEqual(raised.exception.detail, "invalid_reviewer_id")
+
+    def test_reject_accepts_existing_reviewer_id(self) -> None:
+        run_id = self._create_run(status="needs_approval")
+        reviewer_id = "22222222-2222-2222-2222-222222222222"
+        with self.session_factory() as db, patch(
+            "app.api.approvals.delete_run_branch",
+            return_value={"deleted": True, "run_id": run_id, "branch_name": "codex/run-test", "reason": None},
+        ):
+            db.add(
+                User(
+                    id=reviewer_id,
+                    email="reviewer@example.com",
+                    name="Reviewer",
+                    role="reviewer",
+                )
+            )
+            db.commit()
+            response = reject_run(
+                run_id,
+                RejectRequest(
+                    reviewer_id=reviewer_id,
+                    reason="valid reviewer",
+                    failure_reason_code=FailureReasonCode.POLICY_REJECTED,
+                ),
+                db,
+            )
+            self.assertEqual(response.reviewer_id, reviewer_id)
 
 
 class MergeGateCommitPinTests(unittest.TestCase):

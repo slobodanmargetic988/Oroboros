@@ -14,7 +14,7 @@ from app.domain.run_state_machine import (
     TransitionRuleError,
     ensure_transition_allowed,
 )
-from app.models import Approval, Run, RunArtifact
+from app.models import Approval, Run, RunArtifact, User
 from app.services.git_worktree_manager import cleanup_worktree, delete_run_branch
 from app.services.merge_gate import (
     merge_run_commit_to_main,
@@ -101,6 +101,18 @@ def _with_trace(payload: dict | None, trace_id: str | None) -> dict | None:
     return enriched
 
 
+def _validate_reviewer_id(db: Session, reviewer_id: str | None) -> str | None:
+    if reviewer_id is None:
+        return None
+    normalized = reviewer_id.strip()
+    if not normalized:
+        raise HTTPException(status_code=422, detail="invalid_reviewer_id")
+    reviewer_exists = db.query(User.id).filter(User.id == normalized).first()
+    if reviewer_exists is None:
+        raise HTTPException(status_code=422, detail="invalid_reviewer_id")
+    return normalized
+
+
 @router.get("/runs/{run_id}/approvals", response_model=list[ApprovalResponse])
 def list_run_approvals(run_id: str, db: Session = Depends(get_db_session)) -> list[ApprovalResponse]:
     approvals = (
@@ -126,6 +138,7 @@ def list_run_approvals(run_id: str, db: Session = Depends(get_db_session)) -> li
 def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_db_session)) -> ApprovalResponse:
     trace_id = current_trace_id()
     run = _get_run_or_404(db, run_id)
+    reviewer_id = _validate_reviewer_id(db, payload.reviewer_id)
 
     # Allow direct approve when run is preview_ready by advancing to needs_approval first.
     if RunState(run.status) == RunState.PREVIEW_READY:
@@ -136,7 +149,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
             status_from=status_from,
             status_to=status_to,
             payload=_with_trace({"source": "approve_endpoint", "phase": "auto_needs_approval"}, trace_id),
-            actor_id=payload.reviewer_id,
+            actor_id=reviewer_id,
             audit_action="run.approve.auto_needs_approval",
         )
 
@@ -147,13 +160,13 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
         status_from=status_from,
         status_to=status_to,
         payload=_with_trace({"source": "approve_endpoint", "phase": "approved"}, trace_id),
-        actor_id=payload.reviewer_id,
+        actor_id=reviewer_id,
         audit_action="run.approve.accepted",
     )
 
     approval = Approval(
         run_id=run.id,
-        reviewer_id=payload.reviewer_id,
+        reviewer_id=reviewer_id,
         decision="approved",
         reason=payload.reason,
     )
@@ -164,7 +177,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
         status_from=status_from,
         status_to=status_to,
         payload=_with_trace({"decision": "approved", "reason": payload.reason}, trace_id),
-        actor_id=payload.reviewer_id,
+        actor_id=reviewer_id,
         audit_action="run.approve.decision",
     )
     db.add(approval)
@@ -190,7 +203,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
                 },
                 trace_id,
             ),
-            actor_id=payload.reviewer_id,
+            actor_id=reviewer_id,
             audit_action="run.merge.failed",
         )
         db.commit()
@@ -211,7 +224,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
         status_from=merging_from,
         status_to=merging_to,
         payload=_with_trace({"source": "merge_gate", "phase": "merge_start"}, trace_id),
-        actor_id=payload.reviewer_id,
+        actor_id=reviewer_id,
         audit_action="run.merge.started",
     )
 
@@ -235,7 +248,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
                 },
                 trace_id,
             ),
-            actor_id=payload.reviewer_id,
+            actor_id=reviewer_id,
             audit_action="run.merge.failed",
         )
         db.commit()
@@ -259,7 +272,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
         status_from=deploying_from,
         status_to=deploying_to,
         payload=_with_trace({"source": "merge_gate", "phase": "deploy_start"}, trace_id),
-        actor_id=payload.reviewer_id,
+        actor_id=reviewer_id,
         audit_action="run.deploy.started",
     )
 
@@ -428,7 +441,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
             },
             trace_id,
         ),
-        actor_id=payload.reviewer_id,
+        actor_id=reviewer_id,
         audit_action="run.deploy.completed",
     )
     if run.slot_id:
@@ -447,7 +460,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
                     },
                     trace_id,
                 ),
-                actor_id=payload.reviewer_id,
+                actor_id=reviewer_id,
                 audit_action="run.merge.slot_release_skipped",
             )
 
@@ -477,6 +490,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
 def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db_session)) -> ApprovalResponse:
     trace_id = current_trace_id()
     run = _get_run_or_404(db, run_id)
+    reviewer_id = _validate_reviewer_id(db, payload.reviewer_id)
     current_state = RunState(run.status)
     status_changed = current_state not in TERMINAL_STATES
     if status_changed:
@@ -490,7 +504,7 @@ def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db
 
     approval = Approval(
         run_id=run.id,
-        reviewer_id=payload.reviewer_id,
+        reviewer_id=reviewer_id,
         decision="rejected",
         reason=f"{payload.reason} [failure_reason_code={payload.failure_reason_code.value}]",
     )
@@ -516,7 +530,7 @@ def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db
                 "reason": "run_slot_not_assigned",
             }
         try:
-            branch_cleanup_result = delete_run_branch(db=db, run_id=run.id, actor_id=payload.reviewer_id)
+            branch_cleanup_result = delete_run_branch(db=db, run_id=run.id, actor_id=reviewer_id)
         except ValueError as exc:
             branch_cleanup_result = {
                 "deleted": False,
@@ -558,7 +572,7 @@ def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db
             },
             trace_id,
         ),
-        actor_id=payload.reviewer_id,
+        actor_id=reviewer_id,
         audit_action="run.approve.decision",
     )
     if status_changed:
@@ -578,7 +592,7 @@ def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db
                 },
                 trace_id,
             ),
-            actor_id=payload.reviewer_id,
+            actor_id=reviewer_id,
             audit_action="run.approve.rejected",
         )
     else:
@@ -597,7 +611,7 @@ def reject_run(run_id: str, payload: RejectRequest, db: Session = Depends(get_db
                 },
                 trace_id,
             ),
-            actor_id=payload.reviewer_id,
+            actor_id=reviewer_id,
             audit_action="run.approve.rejected_noop",
         )
     db.add(approval)
