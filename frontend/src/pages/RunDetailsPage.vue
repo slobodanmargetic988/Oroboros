@@ -2,17 +2,17 @@
   <div class="run-details-page" role="main" :aria-busy="loading ? 'true' : 'false'">
     <header class="hero">
       <div>
-        <p class="eyebrow">Codex Run</p>
-        <h1>Run Details</h1>
-        <p class="subhead">Timeline, validation checks, logs, artifacts, and review decisions for a single run.</p>
+        <p class="eyebrow">{{ t("runDetails.eyebrow") }}</p>
+        <h1>{{ t("runDetails.title") }}</h1>
+        <p class="subhead">{{ t("runDetails.subhead") }}</p>
       </div>
       <div class="hero-links">
-        <RouterLink class="back-link" to="/home">Home</RouterLink>
-        <RouterLink class="back-link" to="/codex">Back to Inbox</RouterLink>
+        <RouterLink class="back-link" to="/home">{{ t("runDetails.backHome") }}</RouterLink>
+        <RouterLink class="back-link" to="/codex">{{ t("runDetails.backInbox") }}</RouterLink>
       </div>
     </header>
 
-    <section class="details-nav panel" aria-label="Run details sections">
+    <section class="details-nav panel" :aria-label="t('runDetails.sectionsAria')">
       <nav class="details-nav-links">
         <button
           v-for="section in sectionLinks"
@@ -28,14 +28,14 @@
 
     <section id="summary" class="panel">
       <div class="panel-head">
-        <h2>Run Summary</h2>
+        <h2>{{ t("runDetails.summary") }}</h2>
         <button type="button" :disabled="loading" aria-keyshortcuts="Alt+R" @click="refreshDetails">
-          {{ loading ? "Refreshing..." : "Refresh" }}
+          {{ loading ? t("common.refreshing") : t("common.refresh") }}
         </button>
       </div>
 
       <p v-if="loadError" class="error" role="alert">{{ loadError }}</p>
-      <p v-else-if="loading && !run" class="empty">Loading run details...</p>
+      <p v-else-if="loading && !run" class="empty">{{ t("runDetails.loadingRunDetails") }}</p>
 
       <div v-if="run" class="summary-grid">
         <div>
@@ -46,23 +46,23 @@
           <span :class="statusChipClass(run.status)">{{ run.status }}</span>
         </div>
         <div class="summary-meta">
-          <span>ID: {{ run.id }}</span>
-          <span>Route: {{ run.context?.route || run.route || "n/a" }}</span>
-          <span>Slot: {{ run.slot_id || "n/a" }}</span>
-          <span>Branch: {{ run.branch_name || "n/a" }}</span>
-          <span>Commit: {{ run.commit_sha || "n/a" }}</span>
-          <span>Updated: {{ formatDateTime(run.updated_at) }}</span>
-          <span>Last sync: {{ lastSyncLabel }}</span>
+          <span>{{ t("runDetails.id") }}: {{ run.id }}</span>
+          <span>{{ t("runDetails.route") }}: {{ run.context?.route || run.route || t("common.na") }}</span>
+          <span>{{ t("runDetails.slot") }}: {{ run.slot_id || t("common.na") }}</span>
+          <span>{{ t("runDetails.branch") }}: {{ run.branch_name || t("common.na") }}</span>
+          <span>{{ t("runDetails.commit") }}: {{ run.commit_sha || t("common.na") }}</span>
+          <span>{{ t("runDetails.updated") }}: {{ formatDateTime(run.updated_at) }}</span>
+          <span>{{ t("runDetails.lastSync") }}: {{ lastSyncLabel }}</span>
         </div>
       </div>
-      <p v-else-if="!loading" class="empty">Run details are unavailable.</p>
+      <p v-else-if="!loading" class="empty">{{ t("runDetails.unavailable") }}</p>
     </section>
 
     <section id="change-review" class="panel">
-      <h2>Change Review</h2>
+      <h2>{{ t("runDetails.changeReview") }}</h2>
       <div class="review-grid">
         <div>
-          <h3>File Diff View</h3>
+          <h3>{{ t("runDetails.fileDiffView") }}</h3>
           <ul v-if="fileDiffEntries.length" class="diff-list">
             <li v-for="entry in fileDiffEntries" :key="`${entry.source}:${entry.path}`" class="diff-item">
               <div class="diff-item-head">
@@ -72,22 +72,22 @@
                   <span class="stat-del">-{{ entry.deletions ?? 0 }}</span>
                 </span>
               </div>
-              <p class="diff-source">Source: {{ entry.source }}</p>
+              <p class="diff-source">{{ t("runDetails.source") }}: {{ entry.source }}</p>
               <details v-if="entry.patch" class="diff-patch">
-                <summary>Show patch snippet</summary>
+                <summary>{{ t("runDetails.showPatchSnippet") }}</summary>
                 <pre>{{ entry.patch }}</pre>
               </details>
             </li>
           </ul>
-          <p v-else class="empty">No file-level diff payload found yet for this run.</p>
+          <p v-else class="empty">{{ t("runDetails.noFileDiff") }}</p>
         </div>
 
         <div class="migration-panel" :class="migrationWarning ? 'migration-warning' : 'migration-safe'">
-          <h3>Migration Warning</h3>
+          <h3>{{ t("runDetails.migrationWarning") }}</h3>
           <p v-if="migrationWarning">
-            Migration-related files are present in the diff. Require explicit DB review before merge.
+            {{ t("runDetails.migrationWarningBody") }}
           </p>
-          <p v-else>No migration files detected in current diff payload.</p>
+          <p v-else>{{ t("runDetails.noMigrationWarning") }}</p>
 
           <ul v-if="migrationFiles.length" class="migration-list">
             <li v-for="path in migrationFiles" :key="path">
@@ -99,26 +99,26 @@
     </section>
 
     <section id="failure-reasons" class="panel">
-      <h2>Failure Reasons</h2>
+      <h2>{{ t("runDetails.failureReasons") }}</h2>
       <ul v-if="failureReasons.length" class="failure-list">
         <li v-for="reason in failureReasons" :key="reason">{{ reason }}</li>
       </ul>
-      <p v-else class="empty">No failure reasons recorded for this run.</p>
+      <p v-else class="empty">{{ t("runDetails.noFailureReasons") }}</p>
     </section>
 
     <section id="checks-summary" class="panel">
-      <h2>Checks Summary</h2>
+      <h2>{{ t("runDetails.checksSummary") }}</h2>
       <div class="checks-summary-row">
-        <span class="summary-chip summary-chip-neutral">Total {{ checksSummary.total }}</span>
-        <span class="summary-chip summary-chip-success">Passed {{ checksSummary.passed }}</span>
-        <span class="summary-chip summary-chip-danger">Failed {{ checksSummary.failed }}</span>
-        <span class="summary-chip summary-chip-warn">Running {{ checksSummary.running }}</span>
-        <span class="summary-chip summary-chip-neutral">Pending {{ checksSummary.pending }}</span>
+        <span class="summary-chip summary-chip-neutral">{{ t("runDetails.total") }} {{ checksSummary.total }}</span>
+        <span class="summary-chip summary-chip-success">{{ t("runDetails.passed") }} {{ checksSummary.passed }}</span>
+        <span class="summary-chip summary-chip-danger">{{ t("runDetails.failed") }} {{ checksSummary.failed }}</span>
+        <span class="summary-chip summary-chip-warn">{{ t("runDetails.running") }} {{ checksSummary.running }}</span>
+        <span class="summary-chip summary-chip-neutral">{{ t("runDetails.pending") }} {{ checksSummary.pending }}</span>
       </div>
     </section>
 
     <section id="validation-checks" class="panel">
-      <h2>Validation Checks</h2>
+      <h2>{{ t("runDetails.validationChecks") }}</h2>
       <ul v-if="checks.length" class="checks-list">
         <li v-for="check in checks" :key="check.id" class="check-item">
           <div class="check-top">
@@ -126,59 +126,59 @@
             <span :class="statusChipClass(check.status)">{{ check.status }}</span>
           </div>
           <div class="check-meta">
-            <span>Started: {{ formatDateTime(check.started_at) }}</span>
-            <span>Ended: {{ formatDateTime(check.ended_at) }}</span>
-            <span>Duration: {{ formatDuration(check.started_at, check.ended_at) }}</span>
+            <span>{{ t("runDetails.started") }}: {{ formatDateTime(check.started_at) }}</span>
+            <span>{{ t("runDetails.ended") }}: {{ formatDateTime(check.ended_at) }}</span>
+            <span>{{ t("runDetails.duration") }}: {{ formatDuration(check.started_at, check.ended_at) }}</span>
           </div>
           <a v-if="check.artifact_uri" :href="buildArtifactHref(check.artifact_uri)" target="_blank" rel="noreferrer">
-            Open check artifact/log
+            {{ t("runDetails.openArtifact") }}
           </a>
         </li>
       </ul>
-      <p v-else class="empty">No validation checks found for this run.</p>
+      <p v-else class="empty">{{ t("runDetails.noValidationChecks") }}</p>
     </section>
 
     <section id="lifecycle-actions" class="panel">
-      <h2>Approval Actions</h2>
+      <h2>{{ t("runDetails.approvalActions") }}</h2>
       <div class="decision-actions">
         <button class="btn-approve" type="button" :disabled="!canApproveRun || actionBusy" @click="openActionModal('approve')">
-          {{ actionBusy ? "Submitting..." : "Approve Run" }}
+          {{ actionBusy ? t("common.submitting") : t("runDetails.approveRun") }}
         </button>
         <button class="btn-reject" type="button" :disabled="!canRejectRun || actionBusy" @click="openActionModal('reject')">
-          {{ actionBusy ? "Submitting..." : "Reject Run" }}
+          {{ actionBusy ? t("common.submitting") : t("runDetails.rejectRun") }}
         </button>
         <button class="btn-expire" type="button" :disabled="!canExpireRun || actionBusy" @click="openActionModal('expire')">
-          {{ actionBusy ? "Submitting..." : "Expire Run" }}
+          {{ actionBusy ? t("common.submitting") : t("runDetails.expireRun") }}
         </button>
         <button class="btn-resume" type="button" :disabled="!canResumeRun || actionBusy" @click="openActionModal('resume')">
-          {{ actionBusy ? "Submitting..." : "Resume Run" }}
+          {{ actionBusy ? t("common.submitting") : t("runDetails.resumeRun") }}
         </button>
       </div>
       <p class="approval-status">
-        Current run status: <strong>{{ run?.status ?? "unknown" }}</strong>
+        {{ t("runDetails.currentRunStatus") }}: <strong>{{ run?.status ?? t("common.unknown") }}</strong>
       </p>
       <p class="lifecycle-hint">
-        Approve is available in <code>preview_ready</code> and <code>needs_approval</code>. Reject is disabled in <code>merged</code>.
+        {{ t("runDetails.approvalHintOne") }}
       </p>
       <p class="lifecycle-hint">
-        Decision History records approve/reject actions. Expire/resume appear in Timeline events.
+        {{ t("runDetails.approvalHintTwo") }}
       </p>
 
       <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
       <p v-if="actionSuccess" class="success" role="status">{{ actionSuccess }}</p>
 
-      <h3>Decision History</h3>
+      <h3>{{ t("runDetails.decisionHistory") }}</h3>
       <ul v-if="approvals.length" class="approvals-list">
         <li v-for="approval in approvals" :key="approval.id" class="approval-item">
           <div class="approval-top">
             <span :class="statusChipClass(approval.decision)">{{ approval.decision }}</span>
             <span>{{ formatDateTime(approval.created_at) }}</span>
           </div>
-          <p class="approval-meta">Reviewer: {{ approval.reviewer_id || "n/a" }}</p>
+          <p class="approval-meta">{{ t("runDetails.reviewer") }}: {{ approval.reviewer_id || t("common.na") }}</p>
           <p v-if="approval.reason" class="approval-reason">{{ approval.reason }}</p>
         </li>
       </ul>
-      <p v-else class="empty">No approvals/rejections recorded for this run yet.</p>
+      <p v-else class="empty">{{ t("runDetails.noApprovals") }}</p>
     </section>
 
     <div
@@ -197,8 +197,8 @@
       >
         <div class="action-modal-head">
           <h3 id="action-modal-title">{{ actionModalTitle }}</h3>
-          <button class="btn-modal-close" type="button" :disabled="actionBusy" aria-label="Close dialog" @click="closeActionModal">
-            Close
+          <button class="btn-modal-close" type="button" :disabled="actionBusy" :aria-label="t('runDetails.closeDialog')" @click="closeActionModal">
+            {{ t("common.close") }}
           </button>
         </div>
 
@@ -206,26 +206,26 @@
 
         <div v-if="activeActionModal === 'approve'" class="action-modal-grid">
           <label>
-            Reviewer ID (optional)
-            <input v-model="reviewerId" data-autofocus type="text" placeholder="reviewer user id" />
+            {{ t("runDetails.reviewerOptional") }}
+            <input v-model="reviewerId" data-autofocus type="text" :placeholder="t('runDetails.reviewerPlaceholder')" />
           </label>
           <label>
-            Approve reason (optional)
-            <textarea v-model="approveReason" rows="2" placeholder="Reason for approval" />
+            {{ t("runDetails.approveReasonOptional") }}
+            <textarea v-model="approveReason" rows="2" :placeholder="t('runDetails.approveReasonPlaceholder')" />
           </label>
         </div>
 
         <div v-if="activeActionModal === 'reject'" class="action-modal-grid">
           <label>
-            Reviewer ID (optional)
-            <input v-model="reviewerId" data-autofocus type="text" placeholder="reviewer user id" />
+            {{ t("runDetails.reviewerOptional") }}
+            <input v-model="reviewerId" data-autofocus type="text" :placeholder="t('runDetails.reviewerPlaceholder')" />
           </label>
           <label>
-            Reject reason (required)
-            <textarea v-model="rejectReason" rows="2" placeholder="Reason for rejection" />
+            {{ t("runDetails.rejectReasonRequired") }}
+            <textarea v-model="rejectReason" rows="2" :placeholder="t('runDetails.rejectReasonPlaceholder')" />
           </label>
           <label>
-            Failure reason code
+            {{ t("runDetails.failureReasonCode") }}
             <select v-model="rejectFailureReasonCode">
               <option v-for="code in failureReasonCodes" :key="code" :value="code">{{ code }}</option>
             </select>
@@ -234,20 +234,20 @@
 
         <div v-if="activeActionModal === 'expire'" class="action-modal-grid">
           <label>
-            Expire reason (optional)
-            <input v-model="expireReason" data-autofocus type="text" placeholder="Reason for manual expiration" />
+            {{ t("runDetails.expireReasonOptional") }}
+            <input v-model="expireReason" data-autofocus type="text" :placeholder="t('runDetails.expireReasonPlaceholder')" />
           </label>
         </div>
 
         <div v-if="activeActionModal === 'resume'" class="action-modal-grid">
-          <p class="lifecycle-hint">This creates a queued child run from the current failed/expired run.</p>
+          <p class="lifecycle-hint">{{ t("runDetails.resumeHint") }}</p>
         </div>
 
         <p v-if="modalError" class="error" role="alert">{{ modalError }}</p>
         <p v-if="modalSuccess" class="success" role="status">{{ modalSuccess }}</p>
 
         <div class="action-modal-actions">
-          <button class="btn-secondary" type="button" :disabled="actionBusy" @click="closeActionModal">Cancel</button>
+          <button class="btn-secondary" type="button" :disabled="actionBusy" @click="closeActionModal">{{ t("common.cancel") }}</button>
           <button
             v-if="activeActionModal === 'approve'"
             class="btn-approve"
@@ -255,7 +255,7 @@
             :disabled="!canApproveRun || actionBusy"
             @click="approveRun"
           >
-            {{ actionBusy ? "Submitting..." : "Approve Run" }}
+            {{ actionBusy ? t("common.submitting") : t("runDetails.approveRun") }}
           </button>
           <button
             v-if="activeActionModal === 'reject'"
@@ -264,7 +264,7 @@
             :disabled="!canRejectRun || actionBusy"
             @click="rejectRun"
           >
-            {{ actionBusy ? "Submitting..." : "Reject Run" }}
+            {{ actionBusy ? t("common.submitting") : t("runDetails.rejectRun") }}
           </button>
           <button
             v-if="activeActionModal === 'expire'"
@@ -273,7 +273,7 @@
             :disabled="!canExpireRun || actionBusy"
             @click="expireRun"
           >
-            {{ actionBusy ? "Submitting..." : "Expire Run" }}
+            {{ actionBusy ? t("common.submitting") : t("runDetails.expireRun") }}
           </button>
           <button
             v-if="activeActionModal === 'resume'"
@@ -282,25 +282,25 @@
             :disabled="!canResumeRun || actionBusy"
             @click="resumeRun"
           >
-            {{ actionBusy ? "Submitting..." : "Resume Run" }}
+            {{ actionBusy ? t("common.submitting") : t("runDetails.resumeRun") }}
           </button>
         </div>
       </section>
     </div>
 
     <section id="artifacts" class="panel">
-      <h2>Artifact Links</h2>
+      <h2>{{ t("runDetails.artifactLinks") }}</h2>
       <ul v-if="artifactLinks.length" class="artifact-list">
         <li v-for="artifact in artifactLinks" :key="`${artifact.source}:${artifact.uri}`">
           <a :href="buildArtifactHref(artifact.uri)" target="_blank" rel="noreferrer">{{ artifact.label }}</a>
           <span class="artifact-source">{{ artifact.source }}</span>
         </li>
       </ul>
-      <p v-else class="empty">No artifact links available for this run.</p>
+      <p v-else class="empty">{{ t("runDetails.noArtifactLinks") }}</p>
     </section>
 
     <section id="timeline" class="panel">
-      <h2>Timeline</h2>
+      <h2>{{ t("runDetails.timeline") }}</h2>
       <ol v-if="events.length" class="timeline">
         <li v-for="event in events" :key="event.id">
           <div class="event-top">
@@ -308,16 +308,16 @@
             <span>{{ formatDateTime(event.created_at) }}</span>
           </div>
           <div class="event-meta">
-            <span>From: {{ event.status_from || "-" }}</span>
-            <span>To: {{ event.status_to || "-" }}</span>
+            <span>{{ t("runDetails.from") }}: {{ event.status_from || "-" }}</span>
+            <span>{{ t("runDetails.to") }}: {{ event.status_to || "-" }}</span>
           </div>
           <details v-if="event.payload" class="event-payload-details">
-            <summary>Show payload JSON</summary>
+            <summary>{{ t("runDetails.showPayload") }}</summary>
             <pre class="event-payload">{{ stringifyPayload(event.payload) }}</pre>
           </details>
         </li>
       </ol>
-      <p v-else class="empty">No timeline events found for this run.</p>
+      <p v-else class="empty">{{ t("runDetails.noTimeline") }}</p>
     </section>
   </div>
 </template>
@@ -337,6 +337,7 @@ import {
   summarizeChecks,
   ValidationCheckItem,
 } from "../lib/runs";
+import { useI18n } from "../lib/i18n";
 
 interface ApprovalItem {
   id: number;
@@ -350,6 +351,7 @@ interface ApprovalItem {
 type ActionModalName = "approve" | "reject" | "expire" | "resume";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+const { t } = useI18n();
 
 const route = useRoute();
 const router = useRouter();
@@ -417,51 +419,51 @@ const canExpireRun = computed(() =>
   ),
 );
 const canResumeRun = computed(() => Boolean(run.value && ["failed", "expired"].includes(run.value.status)));
-const lastSyncLabel = computed(() => (lastSync.value ? lastSync.value.toLocaleTimeString() : "not yet"));
+const lastSyncLabel = computed(() => (lastSync.value ? lastSync.value.toLocaleTimeString() : t("common.notYet")));
 const actionModalTitle = computed(() => {
   if (activeActionModal.value === "approve") {
-    return "Approve Run";
+    return t("runDetails.modalApproveTitle");
   }
   if (activeActionModal.value === "reject") {
-    return "Reject Run";
+    return t("runDetails.modalRejectTitle");
   }
   if (activeActionModal.value === "expire") {
-    return "Expire Run";
+    return t("runDetails.modalExpireTitle");
   }
   if (activeActionModal.value === "resume") {
-    return "Resume Run";
+    return t("runDetails.modalResumeTitle");
   }
-  return "Run Action";
+  return t("runDetails.modalDefaultTitle");
 });
 const actionModalSubhead = computed(() => {
   if (activeActionModal.value === "approve") {
-    return "Approving will continue merge/deploy pipeline checks for this run.";
+    return t("runDetails.modalApproveSubhead");
   }
   if (activeActionModal.value === "reject") {
-    return "Rejecting records a decision and applies the selected failure reason code.";
+    return t("runDetails.modalRejectSubhead");
   }
   if (activeActionModal.value === "expire") {
-    return "Expire sets recoverable reason code PREVIEW_EXPIRED.";
+    return t("runDetails.modalExpireSubhead");
   }
   if (activeActionModal.value === "resume") {
-    return "Resume creates a queued child run from this failed/expired run.";
+    return t("runDetails.modalResumeSubhead");
   }
   return "";
 });
-const sectionLinks = [
-  { id: "summary", label: "Summary" },
-  { id: "change-review", label: "Change Review" },
-  { id: "failure-reasons", label: "Failures" },
-  { id: "checks-summary", label: "Checks" },
-  { id: "validation-checks", label: "Validation" },
-  { id: "lifecycle-actions", label: "Actions" },
-  { id: "artifacts", label: "Artifacts" },
-  { id: "timeline", label: "Timeline" },
-];
+const sectionLinks = computed(() => [
+  { id: "summary", label: t("runDetails.navSummary") },
+  { id: "change-review", label: t("runDetails.navChangeReview") },
+  { id: "failure-reasons", label: t("runDetails.navFailures") },
+  { id: "checks-summary", label: t("runDetails.navChecks") },
+  { id: "validation-checks", label: t("runDetails.navValidation") },
+  { id: "lifecycle-actions", label: t("runDetails.navActions") },
+  { id: "artifacts", label: t("runDetails.navArtifacts") },
+  { id: "timeline", label: t("runDetails.navTimeline") },
+]);
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
-    return "n/a";
+    return t("common.na");
   }
 
   const timestamp = new Date(value);
@@ -473,16 +475,16 @@ function formatDateTime(value: string | null | undefined): string {
 
 function formatDuration(startedAt: string | null, endedAt: string | null): string {
   if (!startedAt) {
-    return "not started";
+    return t("runDetails.notStarted");
   }
   if (!endedAt) {
-    return "running";
+    return t("runDetails.running");
   }
 
   const start = new Date(startedAt).getTime();
   const end = new Date(endedAt).getTime();
   if (Number.isNaN(start) || Number.isNaN(end) || end < start) {
-    return "n/a";
+    return t("common.na");
   }
 
   const diffMs = end - start;
@@ -538,7 +540,7 @@ async function postJson<T>(url: string, payload: Record<string, unknown>): Promi
 async function refreshDetails(options?: { silent?: boolean }) {
   const silent = options?.silent ?? false;
   if (!runId.value) {
-    loadError.value = "Invalid run id in route.";
+    loadError.value = t("runDetails.invalidRunId");
     return;
   }
 
@@ -593,19 +595,19 @@ function openActionModal(modal: ActionModalName): void {
   resetActionFeedback();
 
   if (modal === "approve" && !canApproveRun.value) {
-    setActionError("Run must be in preview_ready or needs_approval state before approving.");
+    setActionError(t("runDetails.errorApproveState"));
     return;
   }
   if (modal === "reject" && !canRejectRun.value) {
-    setActionError("Run is not loaded yet.");
+    setActionError(t("runDetails.errorRunNotLoaded"));
     return;
   }
   if (modal === "expire" && !canExpireRun.value) {
-    setActionError("Run cannot be manually expired in current state.");
+    setActionError(t("runDetails.errorCannotExpire"));
     return;
   }
   if (modal === "resume" && !canResumeRun.value) {
-    setActionError("Run must be failed or expired before resuming.");
+    setActionError(t("runDetails.errorCannotResume"));
     return;
   }
 
@@ -683,7 +685,7 @@ async function approveRun() {
   resetActionFeedback();
 
   if (!canApproveRun.value) {
-    setActionError("Run must be in preview_ready or needs_approval state before approving.");
+    setActionError(t("runDetails.errorApproveState"));
     return;
   }
 
@@ -694,7 +696,7 @@ async function approveRun() {
       reason: approveReason.value.trim() || undefined,
     });
 
-    setActionSuccess("Run approved successfully.");
+    setActionSuccess(t("runDetails.successApproved"));
     rejectReason.value = "";
     await refreshDetails({ silent: true });
   } catch (error) {
@@ -712,13 +714,13 @@ async function rejectRun() {
   resetActionFeedback();
 
   if (!canRejectRun.value) {
-    setActionError("Run is not loaded yet.");
+    setActionError(t("runDetails.errorRunNotLoaded"));
     return;
   }
 
   const reason = rejectReason.value.trim();
   if (!reason) {
-    setActionError("Reject reason is required.");
+    setActionError(t("runDetails.errorRejectReasonRequired"));
     return;
   }
 
@@ -730,7 +732,7 @@ async function rejectRun() {
       failure_reason_code: rejectFailureReasonCode.value,
     });
 
-    setActionSuccess("Run rejected successfully.");
+    setActionSuccess(t("runDetails.successRejected"));
     approveReason.value = "";
     await refreshDetails({ silent: true });
   } catch (error) {
@@ -748,7 +750,7 @@ async function expireRun() {
   resetActionFeedback();
 
   if (!canExpireRun.value) {
-    setActionError("Run cannot be manually expired in current state.");
+    setActionError(t("runDetails.errorCannotExpire"));
     return;
   }
 
@@ -757,7 +759,7 @@ async function expireRun() {
     await postJson<RunItem>(`${apiBaseUrl}/api/runs/${run.value.id}/expire`, {
       reason: expireReason.value.trim() || undefined,
     });
-    setActionSuccess("Run expired with PREVIEW_EXPIRED recoverable reason.");
+    setActionSuccess(t("runDetails.successExpired"));
     await refreshDetails({ silent: true });
   } catch (error) {
     setActionError((error as Error).message);
@@ -774,14 +776,14 @@ async function resumeRun() {
   resetActionFeedback();
 
   if (!canResumeRun.value) {
-    setActionError("Run must be failed or expired before resuming.");
+    setActionError(t("runDetails.errorCannotResume"));
     return;
   }
 
   actionBusy.value = true;
   try {
     const child = await postJson<RunItem>(`${apiBaseUrl}/api/runs/${run.value.id}/resume`, {});
-    setActionSuccess(`Child run queued: ${child.id}`);
+    setActionSuccess(t("runDetails.successChildQueued", { id: child.id }));
     closeActionModal();
     await router.push(`/codex/runs/${child.id}`);
     await refreshDetails();
@@ -831,7 +833,7 @@ async function setupSectionObserver(): Promise<void> {
     },
   );
 
-  sectionLinks.forEach((section) => {
+  sectionLinks.value.forEach((section) => {
     const node = document.getElementById(section.id);
     if (node) {
       sectionObserver?.observe(node);

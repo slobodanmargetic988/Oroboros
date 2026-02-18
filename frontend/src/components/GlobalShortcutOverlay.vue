@@ -8,46 +8,48 @@
       aria-labelledby="quick-codex-title"
       aria-describedby="quick-codex-subhead"
     >
-      <button type="button" class="overlay-backdrop" aria-label="Close quick prompt" @click="closeOverlay" />
+      <button type="button" class="overlay-backdrop" :aria-label="t('shortcuts.closePrompt')" @click="closeOverlay" />
 
       <section ref="overlayCardRef" class="overlay-card">
         <header class="overlay-head">
-          <p class="overlay-eyebrow">Global Shortcut</p>
-          <h2 id="quick-codex-title">Quick Codex Prompt</h2>
-          <p id="quick-codex-subhead" class="overlay-subhead">Current route will be attached automatically.</p>
+          <p class="overlay-eyebrow">{{ t("shortcuts.eyebrow") }}</p>
+          <h2 id="quick-codex-title">{{ t("shortcuts.title") }}</h2>
+          <p id="quick-codex-subhead" class="overlay-subhead">{{ t("shortcuts.subhead") }}</p>
         </header>
 
         <form class="overlay-form" @submit.prevent="submitRun">
           <label>
-            Prompt
+            {{ t("shortcuts.prompt") }}
             <textarea
               ref="promptInputRef"
               v-model="prompt"
               rows="4"
-              placeholder="Describe the change you want to request"
+              :placeholder="t('shortcuts.promptPlaceholder')"
               required
             />
           </label>
 
           <div class="overlay-row">
             <label>
-              Route
+              {{ t("shortcuts.route") }}
               <input :value="currentRoutePath" type="text" readonly />
             </label>
             <label>
-              Optional Note
-              <input v-model="note" type="text" placeholder="Extra context for this route" />
+              {{ t("shortcuts.optionalNote") }}
+              <input v-model="note" type="text" :placeholder="t('shortcuts.notePlaceholder')" />
             </label>
           </div>
 
           <div class="overlay-actions">
-            <button :disabled="submitting" type="submit">{{ submitting ? "Submitting..." : "Create Run" }}</button>
-            <button :disabled="submitting" type="button" class="secondary" @click="closeOverlay">Cancel</button>
+            <button :disabled="submitting" type="submit">
+              {{ submitting ? t("common.submitting") : t("shortcuts.createRun") }}
+            </button>
+            <button :disabled="submitting" type="button" class="secondary" @click="closeOverlay">{{ t("common.cancel") }}</button>
           </div>
 
           <p v-if="submitError" class="overlay-error" role="alert">{{ submitError }}</p>
           <p v-if="submitSuccess" class="overlay-success" role="status">{{ submitSuccess }}</p>
-          <p class="overlay-hint">Shortcut: Cmd/Ctrl+K to open, Esc to close.</p>
+          <p class="overlay-hint">{{ t("shortcuts.shortcutHint") }}</p>
         </form>
       </section>
     </div>
@@ -59,10 +61,12 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
 
 import { makeRunTitle } from "../lib/runs";
+import { useI18n } from "../lib/i18n";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 const route = useRoute();
+const { t } = useI18n();
 
 const isOpen = ref(false);
 const prompt = ref("");
@@ -148,7 +152,7 @@ async function submitRun() {
 
     prompt.value = "";
     note.value = "";
-    submitSuccess.value = "Run request created.";
+    submitSuccess.value = t("shortcuts.successCreated");
     pendingCloseTimeoutId.value = window.setTimeout(() => {
       if (submitSessionId !== overlaySessionId.value) {
         return;
