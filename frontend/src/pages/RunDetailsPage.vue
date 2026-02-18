@@ -6,7 +6,10 @@
         <h1>Run Details</h1>
         <p class="subhead">Timeline, validation checks, logs, artifacts, and review decisions for a single run.</p>
       </div>
-      <RouterLink class="back-link" to="/codex">Back to Inbox</RouterLink>
+      <div class="hero-links">
+        <RouterLink class="back-link" to="/home">Home</RouterLink>
+        <RouterLink class="back-link" to="/codex">Back to Inbox</RouterLink>
+      </div>
     </header>
 
     <section class="details-nav panel" aria-label="Run details sections">
@@ -938,6 +941,13 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
+.hero-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
+
 .panel {
   background: #ffffff;
   border: 1px solid #d9e2ec;
@@ -1418,6 +1428,10 @@ button:disabled {
   .hero {
     grid-template-columns: 1fr;
     display: grid;
+  }
+
+  .hero-links {
+    align-items: flex-start;
   }
 
   .panel-head {
