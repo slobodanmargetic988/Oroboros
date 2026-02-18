@@ -39,6 +39,16 @@
           you like.
         </p>
       </section>
+
+      <section class="dev-welcome" aria-label="Developer welcome">
+        <p class="dev-kicker">Developer Detected</p>
+        <h2>Welcome, builder of suspiciously specific bugs.</h2>
+        <p>
+          If you are reading this with DevTools open, you are among friends. Yes, we also push a fix, reload, and act
+          surprised when it works on the first try.
+        </p>
+        <code class="dev-code">if (worksOnFirstTry) { console.log("suspicious"); }</code>
+      </section>
     </main>
   </div>
 </template>
@@ -208,5 +218,44 @@ h1 {
   margin: 0;
   color: #475569;
   line-height: 1.6;
+}
+
+.dev-welcome {
+  margin-top: 1rem;
+  background: linear-gradient(135deg, #fff7ed, #fffbeb);
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+}
+
+.dev-kicker {
+  margin: 0;
+  color: #9a3412;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+h2 {
+  margin: 0.45rem 0 0.6rem;
+  color: #7c2d12;
+  font-size: 1.05rem;
+}
+
+.dev-welcome p {
+  margin: 0;
+  line-height: 1.55;
+  color: #7c2d12;
+}
+
+.dev-code {
+  margin-top: 0.85rem;
+  display: inline-block;
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  background: #431407;
+  color: #fed7aa;
+  font-size: 0.85rem;
 }
 </style>
