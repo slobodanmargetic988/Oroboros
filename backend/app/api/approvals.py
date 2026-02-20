@@ -14,9 +14,9 @@ from app.domain.run_state_machine import (
     TransitionRuleError,
     ensure_transition_allowed,
 )
-from app.models import Approval, Run
+from app.models import Approval, Run, RunArtifact
 from app.services.git_worktree_manager import cleanup_worktree, delete_run_branch
-from app.services.merge_gate import merge_run_commit_to_main, run_merge_gate_checks
+from app.services.merge_gate import merge_run_commit_to_main, run_merge_gate_checks, run_post_merge_backend_reload
 from app.services.observability import current_trace_id, emit_structured_log
 from app.services.run_event_log import append_run_event
 from app.services.slot_lease_manager import release_slot_lease
@@ -258,6 +258,59 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
         audit_action="run.deploy.started",
     )
 
+    deploy_result = run_post_merge_backend_reload(run)
+    if deploy_result.artifact_uri:
+        db.add(
+            RunArtifact(
+                run_id=run.id,
+                artifact_type="deploy_backend_reload_log",
+                artifact_uri=deploy_result.artifact_uri,
+                metadata_json={
+                    "status": "passed" if deploy_result.passed else "failed",
+                    "detail": deploy_result.detail,
+                    "reload_command": deploy_result.reload_command,
+                    "healthcheck_command": deploy_result.healthcheck_command,
+                },
+            )
+        )
+
+    if not deploy_result.passed:
+        failed_from, failed_to = _transition_or_409(
+            run,
+            target=RunState.FAILED,
+            failure_reason=deploy_result.failure_reason or FailureReasonCode.DEPLOY_HEALTHCHECK_FAILED,
+        )
+        _add_status_transition_event(
+            db,
+            run=run,
+            status_from=failed_from,
+            status_to=failed_to,
+            payload=_with_trace(
+                {
+                    "source": "deploy_hook",
+                    "failure_reason_code": (
+                        deploy_result.failure_reason or FailureReasonCode.DEPLOY_HEALTHCHECK_FAILED
+                    ).value,
+                    "detail": deploy_result.detail,
+                    "deploy_artifact_uri": deploy_result.artifact_uri,
+                    "rollback_guidance": "Inspect deploy artifact and run rollback script if needed.",
+                },
+                trace_id,
+            ),
+            actor_id=payload.reviewer_id,
+            audit_action="run.deploy.failed",
+        )
+        db.commit()
+        db.refresh(approval)
+        return ApprovalResponse(
+            id=approval.id,
+            run_id=approval.run_id,
+            reviewer_id=approval.reviewer_id,
+            decision=approval.decision,
+            reason=approval.reason,
+            created_at=approval.created_at,
+        )
+
     merged_from, merged_to = _transition_or_409(run, target=RunState.MERGED)
     _add_status_transition_event(
         db,
@@ -265,7 +318,12 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
         status_from=merged_from,
         status_to=merged_to,
         payload=_with_trace(
-            {"source": "merge_gate", "phase": "merge_complete", "merged_commit_sha": run.commit_sha},
+            {
+                "source": "merge_gate",
+                "phase": "merge_complete",
+                "merged_commit_sha": run.commit_sha,
+                "deploy_artifact_uri": deploy_result.artifact_uri,
+            },
             trace_id,
         ),
         actor_id=payload.reviewer_id,

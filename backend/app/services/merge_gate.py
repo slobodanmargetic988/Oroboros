@@ -37,6 +37,16 @@ class MergeGateResult:
     detail: str | None = None
 
 
+@dataclass(frozen=True)
+class DeployReloadResult:
+    passed: bool
+    failure_reason: FailureReasonCode | None = None
+    detail: str | None = None
+    artifact_uri: str | None = None
+    reload_command: list[str] | None = None
+    healthcheck_command: list[str] | None = None
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -108,6 +118,14 @@ def _run_command(command: list[str], *, cwd: Path, timeout_seconds: int) -> tupl
     except subprocess.TimeoutExpired as exc:
         output = f"{exc.stdout or ''}{exc.stderr or ''}"
         return None, True, output
+
+
+def _resolve_deploy_command(env_name: str, default: str) -> list[str]:
+    raw = os.getenv(env_name, default).strip()
+    command = shlex.split(raw)
+    if not command:
+        raise ValueError(f"missing_command:{env_name}")
+    return command
 
 
 def _git_rev_parse(worktree_path: Path, revision: str) -> str | None:
@@ -317,3 +335,107 @@ def merge_run_commit_to_main(db: Session, run: Run) -> tuple[bool, str | None, s
         )
     )
     return True, merged_sha, None
+
+
+def run_post_merge_backend_reload(run: Run) -> DeployReloadResult:
+    repo_path = _repo_root()
+    if not (repo_path / ".git").exists():
+        return DeployReloadResult(
+            passed=False,
+            failure_reason=FailureReasonCode.DEPLOY_HEALTHCHECK_FAILED,
+            detail="repo_root_not_found",
+        )
+
+    try:
+        reload_command = _resolve_deploy_command(
+            "MERGE_GATE_DEPLOY_BACKEND_RELOAD_COMMAND",
+            "sudo systemctl reload-or-restart ouroboros-api",
+        )
+        healthcheck_command = _resolve_deploy_command(
+            "MERGE_GATE_DEPLOY_BACKEND_HEALTHCHECK_COMMAND",
+            "curl -fsS http://127.0.0.1:8000/health",
+        )
+    except ValueError as exc:
+        return DeployReloadResult(
+            passed=False,
+            failure_reason=FailureReasonCode.DEPLOY_HEALTHCHECK_FAILED,
+            detail=str(exc),
+        )
+
+    timeout_seconds = max(15, int(os.getenv("MERGE_GATE_DEPLOY_TIMEOUT_SECONDS", "120")))
+    artifact_dir = _artifact_root() / run.id / "deploy"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path = artifact_dir / "backend-reload.log"
+
+    with artifact_path.open("w", encoding="utf-8") as log_handle:
+        log_handle.write(f"run_id={run.id}\n")
+        log_handle.write(f"commit_sha={run.commit_sha}\n")
+        log_handle.write(f"repo_path={repo_path}\n")
+        log_handle.write(f"reload_command={' '.join(shlex.quote(part) for part in reload_command)}\n")
+        log_handle.write(
+            f"healthcheck_command={' '.join(shlex.quote(part) for part in healthcheck_command)}\n\n"
+        )
+        log_handle.flush()
+
+        reload_exit, reload_timed_out, reload_output = _run_command(
+            reload_command,
+            cwd=repo_path,
+            timeout_seconds=timeout_seconds,
+        )
+        log_handle.write("[reload]\n")
+        log_handle.write(reload_output)
+        log_handle.write("\n")
+        if reload_timed_out:
+            return DeployReloadResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_HEALTHCHECK_FAILED,
+                detail="backend_reload_timeout",
+                artifact_uri=str(artifact_path),
+                reload_command=reload_command,
+                healthcheck_command=healthcheck_command,
+            )
+        if reload_exit != 0:
+            return DeployReloadResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_HEALTHCHECK_FAILED,
+                detail=f"backend_reload_failed:exit_{reload_exit}",
+                artifact_uri=str(artifact_path),
+                reload_command=reload_command,
+                healthcheck_command=healthcheck_command,
+            )
+
+        health_exit, health_timed_out, health_output = _run_command(
+            healthcheck_command,
+            cwd=repo_path,
+            timeout_seconds=timeout_seconds,
+        )
+        log_handle.write("[healthcheck]\n")
+        log_handle.write(health_output)
+        log_handle.write("\n")
+        log_handle.flush()
+
+        if health_timed_out:
+            return DeployReloadResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_HEALTHCHECK_FAILED,
+                detail="backend_healthcheck_timeout",
+                artifact_uri=str(artifact_path),
+                reload_command=reload_command,
+                healthcheck_command=healthcheck_command,
+            )
+        if health_exit != 0:
+            return DeployReloadResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_HEALTHCHECK_FAILED,
+                detail=f"backend_healthcheck_failed:exit_{health_exit}",
+                artifact_uri=str(artifact_path),
+                reload_command=reload_command,
+                healthcheck_command=healthcheck_command,
+            )
+
+    return DeployReloadResult(
+        passed=True,
+        artifact_uri=str(artifact_path),
+        reload_command=reload_command,
+        healthcheck_command=healthcheck_command,
+    )

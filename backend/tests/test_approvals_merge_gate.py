@@ -22,7 +22,7 @@ from app.api.approvals import ApproveRequest, RejectRequest, approve_run, reject
 from app.db.base import Base
 from app.domain.run_state_machine import FailureReasonCode
 from app.models import Approval, AuditLog, Run, ValidationCheck
-from app.services.merge_gate import MergeGateResult, run_merge_gate_checks
+from app.services.merge_gate import DeployReloadResult, MergeGateResult, run_merge_gate_checks
 
 
 def _utcnow_iso() -> str:
@@ -80,6 +80,9 @@ class ApprovalEndpointOrchestrationTests(unittest.TestCase):
         ), patch(
             "app.api.approvals.merge_run_commit_to_main",
             return_value=(True, "mergedsha", None),
+        ), patch(
+            "app.api.approvals.run_post_merge_backend_reload",
+            return_value=DeployReloadResult(passed=True, artifact_uri="/tmp/backend-reload.log"),
         ):
             response = approve_run(run_id, ApproveRequest(reviewer_id=None, reason=None), db)
 
@@ -93,6 +96,30 @@ class ApprovalEndpointOrchestrationTests(unittest.TestCase):
             self.assertIn("run.merge.started", audit_actions)
             self.assertIn("run.deploy.started", audit_actions)
             self.assertIn("run.deploy.completed", audit_actions)
+
+    def test_approve_fails_when_deploy_reload_hook_fails(self) -> None:
+        run_id = self._create_run(status="preview_ready")
+        with self.session_factory() as db, patch(
+            "app.api.approvals.run_merge_gate_checks",
+            return_value=MergeGateResult(passed=True),
+        ), patch(
+            "app.api.approvals.merge_run_commit_to_main",
+            return_value=(True, "mergedsha", None),
+        ), patch(
+            "app.api.approvals.run_post_merge_backend_reload",
+            return_value=DeployReloadResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_HEALTHCHECK_FAILED,
+                detail="backend_healthcheck_failed:exit_1",
+                artifact_uri="/tmp/backend-reload.log",
+            ),
+        ):
+            response = approve_run(run_id, ApproveRequest(reviewer_id=None, reason=None), db)
+
+            self.assertEqual(response.decision, "approved")
+            run = db.query(Run).filter(Run.id == run_id).first()
+            self.assertIsNotNone(run)
+            self.assertEqual(run.status, "failed")
 
     def test_reject_transitions_to_failed_with_reason(self) -> None:
         run_id = self._create_run(status="needs_approval")

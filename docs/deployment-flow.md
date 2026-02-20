@@ -75,3 +75,16 @@ systemd services execute from `/srv/oroboros/current/*` so symlink switch change
 - `DEPLOY_SKIP_HEALTHCHECK=1`
 
 These are for operational flexibility and local validation only; standard production flow should use defaults.
+
+## Approval-time Backend Reload Hook (MYO-63)
+
+After merge-gate checks pass and commit is merged, approval flow runs a host-native backend reload hook:
+1. Reload/restart backend process command.
+2. Backend health gate command.
+3. Persist deploy diagnostics artifact for success/failure.
+4. On failure, run transitions to `failed` with `DEPLOY_HEALTHCHECK_FAILED`.
+
+Hook configuration:
+- `MERGE_GATE_DEPLOY_BACKEND_RELOAD_COMMAND` (default: `sudo systemctl reload-or-restart ouroboros-api`)
+- `MERGE_GATE_DEPLOY_BACKEND_HEALTHCHECK_COMMAND` (default: `curl -fsS http://127.0.0.1:8000/health`)
+- `MERGE_GATE_DEPLOY_TIMEOUT_SECONDS` (default: `120`)
