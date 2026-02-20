@@ -13,7 +13,11 @@ class Settings(BaseSettings):
     repo_root_path: str = "/srv/oroboros/repo"
     worktree_root_path: str = "/srv/oroboros/worktrees"
     cors_allowed_origins_csv: str = (
-        "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:8088,http://localhost:8088"
+        "http://127.0.0.1:5173,http://localhost:5173,"
+        "http://127.0.0.1:8088,http://localhost:8088,"
+        "http://127.0.0.1:3101,http://127.0.0.1:3102,http://127.0.0.1:3103,"
+        "http://localhost:3101,http://localhost:3102,http://localhost:3103,"
+        "https://preview1.example.com,https://preview2.example.com,https://preview3.example.com"
     )
 
     @property

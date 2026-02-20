@@ -1156,6 +1156,9 @@ class WorkerOrchestrator:
             elif not (frontend_root / "package.json").exists():
                 publish_error = f"preview_publish_package_json_missing:{frontend_root / 'package.json'}"
             else:
+                slot_suffix = self._slot_suffix(claimed.slot_id)
+                slot_backend_port = 8100 + int(slot_suffix)
+                preview_api_base_url = os.getenv("WORKER_PREVIEW_API_BASE_URL", "/api").strip() or "/api"
                 command_env = {
                     **os.environ,
                     **self._build_execution_env(
@@ -1165,7 +1168,12 @@ class WorkerOrchestrator:
                         commit_sha=run.commit_sha,
                         check_name="preview_publish",
                     ),
+                    "VITE_API_BASE_URL": preview_api_base_url,
+                    "VITE_SLOT_BACKEND_URL": f"http://127.0.0.1:{slot_backend_port}",
                 }
+                log_handle.write(f"vite_api_base_url={preview_api_base_url}\n")
+                log_handle.write(f"slot_backend_url=http://127.0.0.1:{slot_backend_port}\n")
+                log_handle.flush()
                 if not (frontend_root / "node_modules").exists():
                     install_error = self._run_publish_command(
                         command=[npm_bin, "ci", "--no-audit", "--no-fund"],

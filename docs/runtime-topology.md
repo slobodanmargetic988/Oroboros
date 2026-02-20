@@ -67,6 +67,7 @@ Preview slot-specific provisioning/health contract:
 - Web surfaces (`/etc/oroboros/web-*.env`):
   - `WEB_ROOT=/srv/oroboros/current/infra/<web-root>`
   - `WEB_PORT=<3100..3103>`
+  - Preview slots include `WEB_API_PROXY_TARGET=http://127.0.0.1:810{slot}`
 
 ## Health Endpoints
 - `web-main`: `/health` on port `3100`

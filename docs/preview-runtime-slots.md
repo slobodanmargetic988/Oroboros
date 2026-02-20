@@ -23,6 +23,18 @@ Routing is handled by Caddy in `infra/caddy/Caddyfile`:
 - `preview2.example.com -> 127.0.0.1:3102`
 - `preview3.example.com -> 127.0.0.1:3103`
 
+API routing contract:
+- Preview frontend uses relative `/api` in preview builds.
+- Slot-local web surface proxies `/api` to matching slot backend:
+  - `3101 -> 8101`
+  - `3102 -> 8102`
+  - `3103 -> 8103`
+- Mapping is configured via `WEB_API_PROXY_TARGET` in:
+  - `infra/systemd/env/web-preview1.env`
+  - `infra/systemd/env/web-preview2.env`
+  - `infra/systemd/env/web-preview3.env`
+- Publish diagnostics include `vite_api_base_url` and `slot_backend_url` in `preview.publish.log`.
+
 ## Per-slot Backend Runtime Helpers (MYO-57)
 
 Preview backend slot ports are fixed:
@@ -40,6 +52,17 @@ Helper script:
 ```
 
 Runtime helper responses are JSON and machine-parseable for worker and manual operations.
+
+## Dev Fallback (Direct Port Mode)
+
+When reverse proxy routing is unavailable, run each preview surface directly with its slot API upstream:
+```bash
+python3 scripts/run-web-surface.py --root infra/web-preview-1 --port 3101 --api-target http://127.0.0.1:8101
+python3 scripts/run-web-surface.py --root infra/web-preview-2 --port 3102 --api-target http://127.0.0.1:8102
+python3 scripts/run-web-surface.py --root infra/web-preview-3 --port 3103 --api-target http://127.0.0.1:8103
+```
+
+If direct frontend-to-backend calls are required instead of `/api` proxying, ensure backend CORS allowlist includes preview origins (`3101/3102/3103` and preview domains).
 
 ## Provisioning Automation
 
