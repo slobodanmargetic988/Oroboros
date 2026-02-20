@@ -23,6 +23,24 @@ Routing is handled by Caddy in `infra/caddy/Caddyfile`:
 - `preview2.example.com -> 127.0.0.1:3102`
 - `preview3.example.com -> 127.0.0.1:3103`
 
+## Per-slot Backend Runtime Helpers (MYO-57)
+
+Preview backend slot ports are fixed:
+- `preview-1` -> `127.0.0.1:8101`
+- `preview-2` -> `127.0.0.1:8102`
+- `preview-3` -> `127.0.0.1:8103`
+
+Helper script:
+```bash
+./scripts/preview-backend-runtime.sh status --slot preview-1
+./scripts/preview-backend-runtime.sh start --slot preview-1
+./scripts/preview-backend-runtime.sh restart --slot preview-1
+./scripts/preview-backend-runtime.sh health --slot preview-1
+./scripts/preview-backend-runtime.sh stop --slot preview-1
+```
+
+Runtime helper responses are JSON and machine-parseable for worker and manual operations.
+
 ## Provisioning Automation
 
 Install/update slot env files and start the three preview services:

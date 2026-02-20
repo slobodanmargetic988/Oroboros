@@ -34,6 +34,9 @@ Worker security guardrails and policy controls are documented in:
 | web-preview-1 | `ouroboros-web@preview1.service` | `127.0.0.1` | 3101 | `preview1.example.com` |
 | web-preview-2 | `ouroboros-web@preview2.service` | `127.0.0.1` | 3102 | `preview2.example.com` |
 | web-preview-3 | `ouroboros-web@preview3.service` | `127.0.0.1` | 3103 | `preview3.example.com` |
+| api-preview-1 | host-native slot runtime helper | `127.0.0.1` | 8101 | slot `preview-1` backend |
+| api-preview-2 | host-native slot runtime helper | `127.0.0.1` | 8102 | slot `preview-2` backend |
+| api-preview-3 | host-native slot runtime helper | `127.0.0.1` | 8103 | slot `preview-3` backend |
 | api | `ouroboros-api.service` | `127.0.0.1` | 8000 | `api.example.com` (via proxy) |
 | worker | `ouroboros-worker.service` | `127.0.0.1` | 8090 | `worker.example.com` (via proxy) |
 | postgres | distro package service (`postgresql.service`) | `127.0.0.1` | 5432 | internal DB endpoint |
@@ -71,11 +74,17 @@ Preview slot-specific provisioning/health contract:
 - `web-preview-2`: `/health` on port `3102`
 - `web-preview-3`: `/health` on port `3103`
 - `api`: `http://127.0.0.1:8000/health`
+- `api-preview-1`: `http://127.0.0.1:8101/health`
+- `api-preview-2`: `http://127.0.0.1:8102/health`
+- `api-preview-3`: `http://127.0.0.1:8103/health`
 - `worker`: `http://127.0.0.1:8090/health`
 - `postgres`: `pg_isready -h 127.0.0.1 -U postgres -d builder_control`
 - `redis`: `redis-cli -h 127.0.0.1 ping`
 
 Use `scripts/runtime-health-check.sh` for one-command verification.
+
+Per-slot backend lifecycle helper:
+- `scripts/preview-backend-runtime.sh`
 
 ## Scripted Deploy (MYO-26)
 - Command: `./scripts/deploy.sh <commit_sha>`
