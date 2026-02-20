@@ -54,6 +54,13 @@ Helper script:
 Runtime helper responses are JSON and machine-parseable for worker and manual operations.
 Startup enforces slot->DB binding (`preview-1 -> app_preview_1`, etc.) and fails fast on mismatch.
 
+Worker publish sequence for fullstack readiness:
+1. Frontend build + sync to slot web root.
+2. Backend dependency sync from run branch.
+3. Slot-safe migrations on slot preview DB.
+4. Slot backend restart.
+5. Readiness gate (`FE /health` + `BE /health`) before `preview_ready`.
+
 ## Dev Fallback (Direct Port Mode)
 
 When reverse proxy routing is unavailable, run each preview surface directly with its slot API upstream:

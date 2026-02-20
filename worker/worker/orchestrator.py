@@ -88,6 +88,12 @@ class PreviewPublishResult:
     dist_path: str | None
     log_artifact_uri: str
     file_count: int
+    dependency_sync_log_artifact_uri: str | None = None
+    migration_log_artifact_uri: str | None = None
+    backend_restart_log_artifact_uri: str | None = None
+    readiness_log_artifact_uri: str | None = None
+    frontend_health_url: str | None = None
+    backend_health_url: str | None = None
     error: str | None = None
 
 
@@ -540,8 +546,14 @@ class WorkerOrchestrator:
                     extra_payload={
                         "preview_publish_error": publish_result.error,
                         "preview_publish_log": publish_result.log_artifact_uri,
+                        "preview_dependency_sync_log": publish_result.dependency_sync_log_artifact_uri,
+                        "preview_migration_log": publish_result.migration_log_artifact_uri,
+                        "preview_backend_restart_log": publish_result.backend_restart_log_artifact_uri,
+                        "preview_readiness_log": publish_result.readiness_log_artifact_uri,
                         "preview_web_root": publish_result.web_root_path,
                         "preview_dist_path": publish_result.dist_path,
+                        "preview_frontend_health_url": publish_result.frontend_health_url,
+                        "preview_backend_health_url": publish_result.backend_health_url,
                     },
                     trace_id=claimed.trace_id,
                 )
@@ -1112,13 +1124,31 @@ class WorkerOrchestrator:
         trace_id: str | None,
     ) -> PreviewPublishResult:
         started_at = utcnow()
-        log_path = self.artifact_root / run.id / "preview.publish.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_dir = self.artifact_root / run.id
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        log_path = artifact_dir / "preview.publish.log"
+        dependency_log_path = artifact_dir / "preview.dependency-sync.log"
+        migration_log_path = artifact_dir / "preview.migration.log"
+        restart_log_path = artifact_dir / "preview.backend-restart.log"
+        readiness_log_path = artifact_dir / "preview.readiness.log"
         frontend_root = claimed.worktree_path / "frontend"
+        backend_root = claimed.worktree_path / "backend"
         dist_root = frontend_root / "dist"
         web_root = self._preview_web_root_for_slot(claimed.slot_id)
         timeout_seconds = self._preview_publish_timeout_seconds()
         artifact_uri = str(log_path)
+        dependency_artifact_uri = str(dependency_log_path)
+        migration_artifact_uri = str(migration_log_path)
+        restart_artifact_uri = str(restart_log_path)
+        readiness_artifact_uri = str(readiness_log_path)
+        slot_suffix = self._slot_suffix(claimed.slot_id)
+        slot_index = int(slot_suffix)
+        slot_backend_port = 8100 + slot_index
+        slot_frontend_port = 3100 + slot_index
+        slot_backend_url = f"http://127.0.0.1:{slot_backend_port}"
+        frontend_health_url = f"http://127.0.0.1:{slot_frontend_port}/health"
+        backend_health_url = f"{slot_backend_url}/health"
+        preview_api_base_url = os.getenv("WORKER_PREVIEW_API_BASE_URL", "/api").strip() or "/api"
 
         append_run_event(
             db,
@@ -1129,7 +1159,12 @@ class WorkerOrchestrator:
                 "slot_id": claimed.slot_id,
                 "worktree_path": str(claimed.worktree_path),
                 "frontend_root": str(frontend_root),
+                "backend_root": str(backend_root),
                 "web_root": str(web_root),
+                "slot_backend_url": slot_backend_url,
+                "frontend_health_url": frontend_health_url,
+                "backend_health_url": backend_health_url,
+                "preview_api_base_url": preview_api_base_url,
                 "trace_id": trace_id,
             },
             actor_id=run.created_by,
@@ -1138,13 +1173,61 @@ class WorkerOrchestrator:
 
         publish_error: str | None = None
         file_count = 0
+        step_status: dict[str, str] = {
+            "dependency_sync": "skipped",
+            "slot_migration": "skipped",
+            "backend_restart": "skipped",
+            "readiness_gate": "skipped",
+        }
+
+        command_env = {
+            **os.environ,
+            **self._build_execution_env(
+                trace_id=trace_id,
+                run_id=run.id,
+                slot_id=claimed.slot_id,
+                commit_sha=run.commit_sha,
+                check_name="preview_publish",
+            ),
+            "VITE_API_BASE_URL": preview_api_base_url,
+            "VITE_SLOT_BACKEND_URL": slot_backend_url,
+            "SLOT_ID": claimed.slot_id,
+            "SLOT_BACKEND_URL": slot_backend_url,
+        }
+
+        def _run_step(
+            *,
+            step_name: str,
+            command: list[str],
+            cwd: Path,
+            log_file: Path,
+            timeout_override: int | None = None,
+        ) -> str | None:
+            command_text = " ".join(shlex.quote(part) for part in command)
+            with log_file.open("a", encoding="utf-8") as step_log_handle:
+                step_log_handle.write(f"step={step_name}\n")
+                step_log_handle.write(f"cwd={cwd}\n")
+                step_log_handle.write(f"$ {command_text}\n")
+                step_log_handle.flush()
+                return self._run_publish_command(
+                    command=command,
+                    cwd=cwd,
+                    timeout_seconds=timeout_override or timeout_seconds,
+                    env=command_env,
+                    log_handle=step_log_handle,
+                )
 
         with log_path.open("w", encoding="utf-8") as log_handle:
             log_handle.write(f"run_id={run.id}\n")
             log_handle.write(f"slot_id={claimed.slot_id}\n")
             log_handle.write(f"worktree_path={claimed.worktree_path}\n")
             log_handle.write(f"frontend_root={frontend_root}\n")
+            log_handle.write(f"backend_root={backend_root}\n")
             log_handle.write(f"web_root={web_root}\n")
+            log_handle.write(f"vite_api_base_url={preview_api_base_url}\n")
+            log_handle.write(f"slot_backend_url={slot_backend_url}\n")
+            log_handle.write(f"frontend_health_url={frontend_health_url}\n")
+            log_handle.write(f"backend_health_url={backend_health_url}\n")
             log_handle.write(f"timeout_seconds={timeout_seconds}\n\n")
             log_handle.flush()
 
@@ -1156,24 +1239,6 @@ class WorkerOrchestrator:
             elif not (frontend_root / "package.json").exists():
                 publish_error = f"preview_publish_package_json_missing:{frontend_root / 'package.json'}"
             else:
-                slot_suffix = self._slot_suffix(claimed.slot_id)
-                slot_backend_port = 8100 + int(slot_suffix)
-                preview_api_base_url = os.getenv("WORKER_PREVIEW_API_BASE_URL", "/api").strip() or "/api"
-                command_env = {
-                    **os.environ,
-                    **self._build_execution_env(
-                        trace_id=trace_id,
-                        run_id=run.id,
-                        slot_id=claimed.slot_id,
-                        commit_sha=run.commit_sha,
-                        check_name="preview_publish",
-                    ),
-                    "VITE_API_BASE_URL": preview_api_base_url,
-                    "VITE_SLOT_BACKEND_URL": f"http://127.0.0.1:{slot_backend_port}",
-                }
-                log_handle.write(f"vite_api_base_url={preview_api_base_url}\n")
-                log_handle.write(f"slot_backend_url=http://127.0.0.1:{slot_backend_port}\n")
-                log_handle.flush()
                 if not (frontend_root / "node_modules").exists():
                     install_error = self._run_publish_command(
                         command=[npm_bin, "ci", "--no-audit", "--no-fund"],
@@ -1207,6 +1272,118 @@ class WorkerOrchestrator:
                         log_handle.write(f"[info] copied {file_count} files into {web_root}\n")
                         log_handle.flush()
 
+                if not publish_error:
+                    if not backend_root.exists() or not backend_root.is_dir():
+                        publish_error = f"preview_publish_backend_root_missing:{backend_root}"
+                    else:
+                        step_status["dependency_sync"] = "running"
+                        venv_path = backend_root / ".venv"
+                        if not (venv_path / "bin" / "pip").exists():
+                            sync_error = _run_step(
+                                step_name="dependency_sync_create_venv",
+                                command=["python3", "-m", "venv", ".venv"],
+                                cwd=backend_root,
+                                log_file=dependency_log_path,
+                            )
+                            if sync_error:
+                                publish_error = f"preview_dependency_sync_failed:{sync_error}"
+
+                        if not publish_error:
+                            sync_error = _run_step(
+                                step_name="dependency_sync_install",
+                                command=[
+                                    str(backend_root / ".venv" / "bin" / "pip"),
+                                    "install",
+                                    "--upgrade",
+                                    "pip",
+                                ],
+                                cwd=backend_root,
+                                log_file=dependency_log_path,
+                            )
+                            if sync_error:
+                                publish_error = f"preview_dependency_sync_failed:{sync_error}"
+
+                        if not publish_error:
+                            sync_error = _run_step(
+                                step_name="dependency_sync_install_editable",
+                                command=[
+                                    str(backend_root / ".venv" / "bin" / "pip"),
+                                    "install",
+                                    "-e",
+                                    ".",
+                                ],
+                                cwd=backend_root,
+                                log_file=dependency_log_path,
+                            )
+                            if sync_error:
+                                publish_error = f"preview_dependency_sync_failed:{sync_error}"
+
+                        step_status["dependency_sync"] = "failed" if publish_error else "passed"
+
+                if not publish_error:
+                    step_status["slot_migration"] = "running"
+                    migration_error = _run_step(
+                        step_name="slot_migration",
+                        command=[
+                            str(REPO_ROOT / "scripts" / "preview-slot-migrate.sh"),
+                            "--slot",
+                            claimed.slot_id,
+                            "--worktree-path",
+                            str(claimed.worktree_path),
+                        ],
+                        cwd=claimed.worktree_path,
+                        log_file=migration_log_path,
+                    )
+                    if migration_error:
+                        publish_error = f"preview_slot_migration_failed:{migration_error}"
+                        step_status["slot_migration"] = "failed"
+                    else:
+                        step_status["slot_migration"] = "passed"
+
+                if not publish_error:
+                    step_status["backend_restart"] = "running"
+                    restart_error = _run_step(
+                        step_name="backend_restart",
+                        command=[
+                            str(REPO_ROOT / "scripts" / "preview-backend-runtime.sh"),
+                            "restart",
+                            "--slot",
+                            claimed.slot_id,
+                            "--worktree-path",
+                            str(claimed.worktree_path),
+                            "--health-timeout-seconds",
+                            str(max(5, int(os.getenv("WORKER_PREVIEW_BACKEND_HEALTH_TIMEOUT_SECONDS", "30")))),
+                        ],
+                        cwd=claimed.worktree_path,
+                        log_file=restart_log_path,
+                    )
+                    if restart_error:
+                        publish_error = f"preview_backend_restart_failed:{restart_error}"
+                        step_status["backend_restart"] = "failed"
+                    else:
+                        step_status["backend_restart"] = "passed"
+
+                if not publish_error:
+                    step_status["readiness_gate"] = "running"
+                    frontend_health_error = _run_step(
+                        step_name="frontend_health",
+                        command=["curl", "-fsS", "--max-time", "5", frontend_health_url],
+                        cwd=claimed.worktree_path,
+                        log_file=readiness_log_path,
+                    )
+                    if frontend_health_error:
+                        publish_error = f"preview_frontend_health_failed:{frontend_health_error}"
+                    else:
+                        backend_health_error = _run_step(
+                            step_name="backend_health",
+                            command=["curl", "-fsS", "--max-time", "5", backend_health_url],
+                            cwd=claimed.worktree_path,
+                            log_file=readiness_log_path,
+                        )
+                        if backend_health_error:
+                            publish_error = f"preview_backend_health_failed:{backend_health_error}"
+                    step_status["readiness_gate"] = "failed" if publish_error else "passed"
+
         ended_at = utcnow()
         db.add(
             RunArtifact(
@@ -1220,6 +1397,59 @@ class WorkerOrchestrator:
                     "web_root": str(web_root),
                     "file_count": file_count,
                     "status": "failed" if publish_error else "passed",
+                    "frontend_health_url": frontend_health_url,
+                    "backend_health_url": backend_health_url,
+                    "step_status": step_status,
+                    "trace_id": trace_id,
+                },
+            )
+        )
+        db.add(
+            RunArtifact(
+                run_id=run.id,
+                artifact_type="preview_dependency_sync_log",
+                artifact_uri=dependency_artifact_uri,
+                metadata_json={
+                    "slot_id": claimed.slot_id,
+                    "status": step_status["dependency_sync"],
+                    "trace_id": trace_id,
+                },
+            )
+        )
+        db.add(
+            RunArtifact(
+                run_id=run.id,
+                artifact_type="preview_migration_log",
+                artifact_uri=migration_artifact_uri,
+                metadata_json={
+                    "slot_id": claimed.slot_id,
+                    "status": step_status["slot_migration"],
+                    "trace_id": trace_id,
+                },
+            )
+        )
+        db.add(
+            RunArtifact(
+                run_id=run.id,
+                artifact_type="preview_backend_restart_log",
+                artifact_uri=restart_artifact_uri,
+                metadata_json={
+                    "slot_id": claimed.slot_id,
+                    "status": step_status["backend_restart"],
+                    "trace_id": trace_id,
+                },
+            )
+        )
+        db.add(
+            RunArtifact(
+                run_id=run.id,
+                artifact_type="preview_readiness_log",
+                artifact_uri=readiness_artifact_uri,
+                metadata_json={
+                    "slot_id": claimed.slot_id,
+                    "status": step_status["readiness_gate"],
+                    "frontend_health_url": frontend_health_url,
+                    "backend_health_url": backend_health_url,
                     "trace_id": trace_id,
                 },
             )
@@ -1239,6 +1469,13 @@ class WorkerOrchestrator:
                     "dist_root": str(dist_root),
                     "web_root": str(web_root),
                     "artifact_uri": artifact_uri,
+                    "dependency_sync_artifact_uri": dependency_artifact_uri,
+                    "migration_artifact_uri": migration_artifact_uri,
+                    "backend_restart_artifact_uri": restart_artifact_uri,
+                    "readiness_artifact_uri": readiness_artifact_uri,
+                    "frontend_health_url": frontend_health_url,
+                    "backend_health_url": backend_health_url,
+                    "step_status": step_status,
                     "duration_seconds": duration_seconds,
                     "error": publish_error,
                     "trace_id": trace_id,
@@ -1262,6 +1499,12 @@ class WorkerOrchestrator:
                 dist_path=str(dist_root),
                 log_artifact_uri=artifact_uri,
                 file_count=file_count,
+                dependency_sync_log_artifact_uri=dependency_artifact_uri,
+                migration_log_artifact_uri=migration_artifact_uri,
+                backend_restart_log_artifact_uri=restart_artifact_uri,
+                readiness_log_artifact_uri=readiness_artifact_uri,
+                frontend_health_url=frontend_health_url,
+                backend_health_url=backend_health_url,
                 error=publish_error,
             )
 
@@ -1277,6 +1520,13 @@ class WorkerOrchestrator:
                 "dist_root": str(dist_root),
                 "web_root": str(web_root),
                 "artifact_uri": artifact_uri,
+                "dependency_sync_artifact_uri": dependency_artifact_uri,
+                "migration_artifact_uri": migration_artifact_uri,
+                "backend_restart_artifact_uri": restart_artifact_uri,
+                "readiness_artifact_uri": readiness_artifact_uri,
+                "frontend_health_url": frontend_health_url,
+                "backend_health_url": backend_health_url,
+                "step_status": step_status,
                 "duration_seconds": duration_seconds,
                 "file_count": file_count,
                 "trace_id": trace_id,
@@ -1299,6 +1549,12 @@ class WorkerOrchestrator:
             dist_path=str(dist_root),
             log_artifact_uri=artifact_uri,
             file_count=file_count,
+            dependency_sync_log_artifact_uri=dependency_artifact_uri,
+            migration_log_artifact_uri=migration_artifact_uri,
+            backend_restart_log_artifact_uri=restart_artifact_uri,
+            readiness_log_artifact_uri=readiness_artifact_uri,
+            frontend_health_url=frontend_health_url,
+            backend_health_url=backend_health_url,
             error=None,
         )
 
