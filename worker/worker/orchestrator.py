@@ -560,6 +560,30 @@ class WorkerOrchestrator:
                 db.commit()
                 return
 
+            integration_result = self._run_slot_backend_integration_check(
+                db=db,
+                run=run,
+                claimed=claimed,
+                should_cancel=should_cancel,
+                on_tick=on_tick,
+                trace_id=claimed.trace_id,
+                backend_health_url=publish_result.backend_health_url
+                or f"http://127.0.0.1:{8100 + int(self._slot_suffix(claimed.slot_id))}/health",
+            )
+            if not integration_result.ok:
+                failed_result = integration_result.failed_result or result
+                self._finalize_failed_run(
+                    db=db,
+                    run=run,
+                    slot_id=claimed.slot_id,
+                    failure_reason=integration_result.failure_reason or FailureReasonCode.CHECKS_FAILED,
+                    result=failed_result,
+                    extra_payload={"failed_check": integration_result.failed_check_name},
+                    trace_id=claimed.trace_id,
+                )
+                db.commit()
+                return
+
             self._finalize_success_run(db=db, run=run, result=result, trace_id=claimed.trace_id)
             db.commit()
 
@@ -1567,7 +1591,7 @@ class WorkerOrchestrator:
         should_cancel,
         on_tick,
         trace_id: str | None,
-    ) -> ValidationPipelineResult:
+        ) -> ValidationPipelineResult:
         for check in self.required_checks:
             check_started_at = utcnow()
             output_path = self.artifact_root / run.id / "checks" / f"{check.name}.log"
@@ -1688,6 +1712,182 @@ class WorkerOrchestrator:
                     failed_check_name=check.name,
                     failed_result=result,
                 )
+
+        return ValidationPipelineResult(ok=True)
+
+    def _run_slot_backend_integration_check(
+        self,
+        *,
+        db,
+        run: Run,
+        claimed: ClaimedRun,
+        should_cancel,
+        on_tick,
+        trace_id: str | None,
+        backend_health_url: str,
+    ) -> ValidationPipelineResult:
+        check_name = "slot_backend_integration"
+        backend_api_base_url = backend_health_url.removesuffix("/health")
+        check_started_at = utcnow()
+        output_path = self.artifact_root / run.id / "checks" / f"{check_name}.log"
+
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="validation_check_started",
+            payload={
+                "source": "worker",
+                "check_name": check_name,
+                "backend_api_base_url": backend_api_base_url,
+                "slot_id": claimed.slot_id,
+                "trace_id": trace_id,
+            },
+            actor_id=run.created_by,
+            audit_action="run.test.check_started",
+        )
+
+        smoke_script = (
+            "import json,sys,urllib.request\n"
+            "base=sys.argv[1].rstrip('/')\n"
+            "slot_id=sys.argv[2]\n"
+            "with urllib.request.urlopen(f'{base}/health', timeout=5) as health_resp:\n"
+            "    health_body=health_resp.read().decode('utf-8', errors='replace').strip()\n"
+            "    if health_resp.status != 200:\n"
+            "        raise RuntimeError(f'backend_health_status:{health_resp.status}')\n"
+            "payload={\n"
+            "  'title': f'slot-backend-smoke-{slot_id}',\n"
+            "  'prompt': 'Synthetic slot backend integration smoke check',\n"
+            "  'metadata': {'source': 'slot_backend_integration', 'slot_id': slot_id}\n"
+            "}\n"
+            "request=urllib.request.Request(\n"
+            "  f'{base}/api/runs',\n"
+            "  data=json.dumps(payload).encode('utf-8'),\n"
+            "  headers={'Content-Type': 'application/json'},\n"
+            "  method='POST',\n"
+            ")\n"
+            "with urllib.request.urlopen(request, timeout=10) as created_resp:\n"
+            "    created=json.loads(created_resp.read().decode('utf-8'))\n"
+            "run_id=created.get('id')\n"
+            "if not run_id:\n"
+            "    raise RuntimeError('missing_run_id_from_create')\n"
+            "with urllib.request.urlopen(f'{base}/api/runs/{run_id}', timeout=10) as fetched_resp:\n"
+            "    fetched=json.loads(fetched_resp.read().decode('utf-8'))\n"
+            "if fetched.get('id') != run_id:\n"
+            "    raise RuntimeError('run_readback_mismatch')\n"
+            "print(json.dumps({\n"
+            "  'status': 'ok',\n"
+            "  'slot_id': slot_id,\n"
+            "  'backend_api_base_url': base,\n"
+            "  'health_body': health_body,\n"
+            "  'synthetic_run_id': run_id,\n"
+            "}, sort_keys=True))\n"
+        )
+
+        result = run_codex_command(
+            command=["python3", "-c", smoke_script, backend_api_base_url, claimed.slot_id],
+            worktree_path=claimed.worktree_path,
+            output_path=output_path,
+            timeout_seconds=max(30, int(os.getenv("WORKER_SLOT_BACKEND_SMOKE_TIMEOUT_SECONDS", "120"))),
+            poll_interval_seconds=self.poll_interval_seconds,
+            should_cancel=should_cancel,
+            on_tick=on_tick,
+            env=self._build_execution_env(
+                trace_id=trace_id,
+                run_id=run.id,
+                slot_id=claimed.slot_id,
+                commit_sha=run.commit_sha,
+                check_name=check_name,
+            ),
+        )
+        check_ended_at = utcnow()
+
+        failure_reason: FailureReasonCode | None = None
+        check_status = "passed"
+        if result.lease_expired:
+            check_status = "expired"
+            failure_reason = FailureReasonCode.PREVIEW_EXPIRED
+        elif result.canceled:
+            check_status = "canceled"
+            failure_reason = FailureReasonCode.AGENT_CANCELED
+        elif result.timed_out:
+            check_status = "timed_out"
+            failure_reason = FailureReasonCode.AGENT_TIMEOUT
+        elif result.exit_code != 0:
+            check_status = "failed"
+            failure_reason = FailureReasonCode.CHECKS_FAILED
+
+        artifact_uri = str(output_path)
+        db.add(
+            ValidationCheck(
+                run_id=run.id,
+                check_name=check_name,
+                status=check_status,
+                started_at=check_started_at,
+                ended_at=check_ended_at,
+                artifact_uri=artifact_uri,
+            )
+        )
+        db.add(
+            RunArtifact(
+                run_id=run.id,
+                artifact_type="validation_check_log",
+                artifact_uri=artifact_uri,
+                metadata_json={
+                    "check_name": check_name,
+                    "status": check_status,
+                    "backend_api_base_url": backend_api_base_url,
+                    "slot_id": claimed.slot_id,
+                    "exit_code": result.exit_code,
+                    "timed_out": result.timed_out,
+                    "canceled": result.canceled,
+                    "lease_expired": result.lease_expired,
+                    "trace_id": trace_id,
+                },
+            )
+        )
+        append_run_event(
+            db,
+            run_id=run.id,
+            event_type="validation_check_finished",
+            payload={
+                "source": "worker",
+                "check_name": check_name,
+                "status": check_status,
+                "backend_api_base_url": backend_api_base_url,
+                "slot_id": claimed.slot_id,
+                "artifact_uri": artifact_uri,
+                "exit_code": result.exit_code,
+                "timed_out": result.timed_out,
+                "canceled": result.canceled,
+                "lease_expired": result.lease_expired,
+                "duration_seconds": result.duration_seconds,
+                "output_excerpt": result.output_excerpt,
+                "trace_id": trace_id,
+            },
+            actor_id=run.created_by,
+            audit_action="run.test.check_completed",
+        )
+        emit_worker_log(
+            event="validation_check_finished",
+            trace_id=trace_id,
+            run_id=run.id,
+            slot_id=claimed.slot_id,
+            commit_sha=run.commit_sha,
+            check_name=check_name,
+            status=check_status,
+            exit_code=result.exit_code,
+            timed_out=result.timed_out,
+            canceled=result.canceled,
+            lease_expired=result.lease_expired,
+        )
+
+        if failure_reason is not None:
+            return ValidationPipelineResult(
+                ok=False,
+                failure_reason=failure_reason,
+                failed_check_name=check_name,
+                failed_result=result,
+            )
 
         return ValidationPipelineResult(ok=True)
 

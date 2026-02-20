@@ -155,9 +155,14 @@ class ValidationPipelineTests(unittest.TestCase):
                 file_count=42,
                 error=None,
             ),
-        ):
+        ), patch.object(
+            worker_orchestrator.WorkerOrchestrator,
+            "_run_slot_backend_integration_check",
+            return_value=worker_orchestrator.ValidationPipelineResult(ok=True),
+        ) as integration_mock:
             orchestrator = worker_orchestrator.WorkerOrchestrator()
             processed = orchestrator.process_next_run()
+            integration_mock.assert_called_once()
 
         self.assertTrue(processed)
 
