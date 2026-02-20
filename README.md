@@ -36,6 +36,7 @@ This repository contains the initial runtime boundaries for the Codex Builder Co
    - `docs/database-usage-guide.html`
    - `docs/runtime-topology.md`
    - `docs/deployment-flow.md`
+   - `docs/fullstack-preview-slot-runtime-contract.md`
    - `docs/preview-runtime-slots.md`
    - `docs/preview-smoke-e2e-harness.md`
    - `docs/worker-security-guardrails.md`

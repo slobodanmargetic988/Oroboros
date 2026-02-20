@@ -2,6 +2,9 @@
 
 This document defines fixed preview slot provisioning for host-level deployment.
 
+Canonical fullstack slot contract is defined in:
+- `docs/fullstack-preview-slot-runtime-contract.md`
+
 ## Dedicated Preview URLs
 - `preview1.example.com`
 - `preview2.example.com`
@@ -11,9 +14,9 @@ This document defines fixed preview slot provisioning for host-level deployment.
 
 | Slot ID | URL | systemd unit | Local port | Static root |
 |---|---|---|---:|---|
-| preview1 | `preview1.example.com` | `ouroboros-web@preview1` | 3101 | `/srv/oroboros/current/infra/web-preview-1` |
-| preview2 | `preview2.example.com` | `ouroboros-web@preview2` | 3102 | `/srv/oroboros/current/infra/web-preview-2` |
-| preview3 | `preview3.example.com` | `ouroboros-web@preview3` | 3103 | `/srv/oroboros/current/infra/web-preview-3` |
+| preview-1 (`preview1`) | `preview1.example.com` | `ouroboros-web@preview1` | 3101 | `/srv/oroboros/current/infra/web-preview-1` |
+| preview-2 (`preview2`) | `preview2.example.com` | `ouroboros-web@preview2` | 3102 | `/srv/oroboros/current/infra/web-preview-2` |
+| preview-3 (`preview3`) | `preview3.example.com` | `ouroboros-web@preview3` | 3103 | `/srv/oroboros/current/infra/web-preview-3` |
 
 Routing is handled by Caddy in `infra/caddy/Caddyfile`:
 - `preview1.example.com -> 127.0.0.1:3101`
@@ -44,9 +47,9 @@ This is host-only provisioning: no Docker/Compose/Kubernetes/containers.
 ## Deterministic DB Reset + Seed Strategy (MYO-23)
 
 Each preview slot has a dedicated database:
-- `preview1` -> `app_preview_1`
-- `preview2` -> `app_preview_2`
-- `preview3` -> `app_preview_3`
+- `preview-1` (`preview1`) -> `app_preview_1`
+- `preview-2` (`preview2`) -> `app_preview_2`
+- `preview-3` (`preview3`) -> `app_preview_3`
 
 Reset script per slot DB:
 ```bash
