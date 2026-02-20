@@ -56,3 +56,18 @@ Operational wrappers:
 - `scripts/preview-db-reset.sh`
 - `scripts/preview-db-seed.sh`
 - `scripts/preview-db-reset-and-seed.sh`
+
+## Slot-safe Preview Migration Contract (MYO-59)
+
+Preview migration helper:
+- `scripts/preview-slot-migrate.sh --slot preview-1 [--worktree-path ...]`
+
+Safety rules:
+- Slot target is deterministic:
+  - `preview-1 -> app_preview_1`
+  - `preview-2 -> app_preview_2`
+  - `preview-3 -> app_preview_3`
+- Non-preview DB targets are blocked in preview mode.
+- If resolved DB target does not match slot mapping, command fails hard before running Alembic.
+
+Backend runtime also validates slot->DB binding on startup when `SLOT_ID` is set.

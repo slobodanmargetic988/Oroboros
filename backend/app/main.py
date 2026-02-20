@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 
 from fastapi import FastAPI, Request
@@ -15,6 +16,7 @@ from app.api.runs import router as runs_router
 from app.api.slots import router as slots_router
 from app.api.worktrees import router as worktrees_router
 from app.core.config import get_settings
+from app.core.preview_slot_contract import assert_preview_slot_database_binding, normalize_slot_id
 from app.services.observability import (
     emit_structured_log,
     ensure_trace_id,
@@ -25,6 +27,27 @@ from app.services.observability import (
 settings = get_settings()
 if not logging.getLogger().handlers:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+
+def _validate_preview_slot_runtime_contract() -> None:
+    slot_id = os.getenv("SLOT_ID", "").strip()
+    if not slot_id:
+        return
+
+    canonical_slot = normalize_slot_id(slot_id)
+    try:
+        expected_db = assert_preview_slot_database_binding(canonical_slot, settings.database_url)
+    except ValueError as exc:
+        raise RuntimeError(f"preview_slot_database_binding_invalid:{exc}") from exc
+
+    logging.getLogger("app.main").info(
+        "preview_slot_runtime_binding slot_id=%s database=%s",
+        canonical_slot,
+        expected_db,
+    )
+
+
+_validate_preview_slot_runtime_contract()
 app = FastAPI(title=settings.app_name)
 if settings.cors_allowed_origins:
     app.add_middleware(

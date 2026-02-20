@@ -52,6 +52,7 @@ Helper script:
 ```
 
 Runtime helper responses are JSON and machine-parseable for worker and manual operations.
+Startup enforces slot->DB binding (`preview-1 -> app_preview_1`, etc.) and fails fast on mismatch.
 
 ## Dev Fallback (Direct Port Mode)
 
@@ -106,6 +107,16 @@ Combined reset + load strategy (seed or snapshot):
 ```bash
 ./scripts/preview-db-reset-and-seed.sh --slot preview1 --run-id <run_id> --strategy seed --seed-version v1
 ./scripts/preview-db-reset-and-seed.sh --slot preview1 --run-id <run_id> --strategy snapshot --snapshot-version <snapshot_version>
+```
+
+Apply slot-safe migrations for preview DB:
+```bash
+./scripts/preview-slot-migrate.sh --slot preview-1
+```
+
+Validate migration target without executing:
+```bash
+./scripts/preview-slot-migrate.sh --slot preview-1 --dry-run
 ```
 
 Dry-run examples:

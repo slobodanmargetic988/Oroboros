@@ -91,6 +91,33 @@ slot_db_for() {
   echo "app_preview_${slot_num}"
 }
 
+resolve_database_url() {
+  local slot_num="$1"
+  local db_name="$2"
+  local template="${PREVIEW_BACKEND_DATABASE_URL_TEMPLATE:-postgresql+psycopg://postgres:postgres@127.0.0.1:5432/{db_name}}"
+  local resolved="${template//\{slot_num\}/${slot_num}}"
+  resolved="${resolved//\{slot\}/preview-${slot_num}}"
+  resolved="${resolved//\{db_name\}/${db_name}}"
+  echo "${resolved}"
+}
+
+validate_database_url() {
+  local db_url="$1"
+  local expected_db="$2"
+  if [[ "${db_url}" != *"/${expected_db}"* && "${db_url}" != *"/${expected_db}?"* ]]; then
+    emit_json ok=false error=slot_database_mismatch expected_db="${expected_db}" slot_id="${CANONICAL_SLOT}"
+    exit 1
+  fi
+  if [[ "${db_url}" == *"/builder_control"* ]]; then
+    emit_json ok=false error=unsafe_database_target forbidden_db=builder_control slot_id="${CANONICAL_SLOT}"
+    exit 1
+  fi
+  if [[ "${db_url}" != *"/app_preview_"* ]]; then
+    emit_json ok=false error=non_preview_database_target expected_prefix=app_preview_ slot_id="${CANONICAL_SLOT}"
+    exit 1
+  fi
+}
+
 is_pid_running() {
   local pid="$1"
   if [[ -z "${pid}" ]]; then
@@ -203,34 +230,22 @@ start_slot() {
     run_cmd=("python3" "-m" "uvicorn" "app.main:app" "--host" "127.0.0.1" "--port" "${SLOT_BACKEND_PORT}")
   fi
 
-  local db_url_template="${PREVIEW_BACKEND_DATABASE_URL_TEMPLATE:-}"
-  local database_url=""
-  if [[ -n "${db_url_template}" ]]; then
-    database_url="${db_url_template//\{slot\}/${CANONICAL_SLOT}}"
-    database_url="${database_url//\{slot_num\}/${SLOT_NUM}}"
-    database_url="${database_url//\{db_name\}/${SLOT_DB_NAME}}"
+  local database_url="${DATABASE_URL:-}"
+  if [[ -z "${database_url}" ]]; then
+    database_url="$(resolve_database_url "${SLOT_NUM}" "${SLOT_DB_NAME}")"
   fi
+  validate_database_url "${database_url}" "${SLOT_DB_NAME}"
 
   (
     cd "${BACKEND_DIR}"
-    if [[ -n "${database_url}" ]]; then
-      env \
-        SLOT_ID="${CANONICAL_SLOT}" \
-        SLOT_NUM="${SLOT_NUM}" \
-        SLOT_BACKEND_PORT="${SLOT_BACKEND_PORT}" \
-        SLOT_DB_NAME="${SLOT_DB_NAME}" \
-        SLOT_WORKTREE_PATH="${WORKTREE_PATH}" \
-        DATABASE_URL="${database_url}" \
-        "${run_cmd[@]}" >>"${LOG_FILE}" 2>&1 &
-    else
-      env \
-        SLOT_ID="${CANONICAL_SLOT}" \
-        SLOT_NUM="${SLOT_NUM}" \
-        SLOT_BACKEND_PORT="${SLOT_BACKEND_PORT}" \
-        SLOT_DB_NAME="${SLOT_DB_NAME}" \
-        SLOT_WORKTREE_PATH="${WORKTREE_PATH}" \
-        "${run_cmd[@]}" >>"${LOG_FILE}" 2>&1 &
-    fi
+    env \
+      SLOT_ID="${CANONICAL_SLOT}" \
+      SLOT_NUM="${SLOT_NUM}" \
+      SLOT_BACKEND_PORT="${SLOT_BACKEND_PORT}" \
+      SLOT_DB_NAME="${SLOT_DB_NAME}" \
+      SLOT_WORKTREE_PATH="${WORKTREE_PATH}" \
+      DATABASE_URL="${database_url}" \
+      "${run_cmd[@]}" >>"${LOG_FILE}" 2>&1 &
     echo $! >"${PID_FILE}"
   )
 
@@ -249,7 +264,7 @@ start_slot() {
     exit 1
   fi
 
-  emit_json ok=true command=start slot_id="${CANONICAL_SLOT}" pid="${started_pid}" port="${SLOT_BACKEND_PORT}" health_url="${HEALTH_URL}" log_file="${LOG_FILE}" worktree_path="${WORKTREE_PATH}"
+  emit_json ok=true command=start slot_id="${CANONICAL_SLOT}" pid="${started_pid}" port="${SLOT_BACKEND_PORT}" health_url="${HEALTH_URL}" log_file="${LOG_FILE}" worktree_path="${WORKTREE_PATH}" db_name="${SLOT_DB_NAME}"
 }
 
 stop_slot() {
