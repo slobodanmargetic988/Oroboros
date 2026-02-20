@@ -5,6 +5,8 @@ import {
   extractFailureReasons,
   extractFileDiffEntries,
   extractLatestSlotWaitingReason,
+  extractPreviewEndpointInfo,
+  extractPublishDiagnostics,
   filterRunsByRoute,
   getRunRoute,
   hasMigrationWarning,
@@ -395,5 +397,68 @@ describe("slot helpers", () => {
   it("maps preview slot id to URL", () => {
     expect(previewUrlForSlot("preview-2")).toBe("http://127.0.0.1:3102");
     expect(previewUrlForSlot("unknown")).toBe("http://127.0.0.1:3100");
+  });
+});
+
+describe("preview diagnostics helpers", () => {
+  it("extracts preview endpoints and fullstack-ready state from latest publish event", () => {
+    const run = {
+      id: "run-1",
+      title: "Run",
+      prompt: "Prompt",
+      status: "preview_ready",
+      slot_id: "preview-1",
+      created_at: "2026-02-16T00:00:00Z",
+      updated_at: "2026-02-16T00:00:00Z",
+    };
+    const events = [
+      {
+        id: 1,
+        run_id: "run-1",
+        event_type: "preview_publish_completed",
+        status_from: "testing",
+        status_to: "preview_ready",
+        payload: {
+          frontend_health_url: "http://127.0.0.1:3101/health",
+          backend_health_url: "http://127.0.0.1:8101/health",
+          step_status: { readiness_gate: "passed" },
+        },
+        created_at: "2026-02-16T00:00:00Z",
+      },
+    ];
+
+    const info = extractPreviewEndpointInfo(run, events);
+    expect(info.frontendUrl).toBe("http://127.0.0.1:3101");
+    expect(info.backendUrl).toBe("http://127.0.0.1:8101");
+    expect(info.fullstackReady).toBe(true);
+  });
+
+  it("extracts publish diagnostics artifact links from latest publish event", () => {
+    const diagnostics = extractPublishDiagnostics([
+      {
+        id: 2,
+        run_id: "run-1",
+        event_type: "preview_publish_failed",
+        status_from: "testing",
+        status_to: "failed",
+        payload: {
+          artifact_uri: "/logs/publish.log",
+          dependency_sync_artifact_uri: "/logs/dependency.log",
+          migration_artifact_uri: "/logs/migration.log",
+          backend_restart_artifact_uri: "/logs/restart.log",
+          readiness_artifact_uri: "/logs/readiness.log",
+        },
+        created_at: "2026-02-16T00:01:00Z",
+      },
+    ]);
+
+    expect(diagnostics.map((item) => item.uri)).toEqual([
+      "/logs/publish.log",
+      "/logs/dependency.log",
+      "/logs/migration.log",
+      "/logs/restart.log",
+      "/logs/readiness.log",
+    ]);
+    expect(diagnostics.every((item) => item.status === "failed")).toBe(true);
   });
 });

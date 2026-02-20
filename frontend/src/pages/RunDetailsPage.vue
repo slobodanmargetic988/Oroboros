@@ -51,6 +51,19 @@
           <span>Updated: {{ formatDateTime(run.updated_at) }}</span>
           <span>Last sync: {{ lastSyncLabel }}</span>
         </div>
+        <div class="preview-endpoints">
+          <span v-if="previewEndpointInfo.frontendUrl">
+            Frontend preview:
+            <a :href="previewEndpointInfo.frontendUrl" target="_blank" rel="noreferrer">{{ previewEndpointInfo.frontendUrl }}</a>
+          </span>
+          <span v-if="previewEndpointInfo.backendUrl">
+            Backend preview:
+            <a :href="previewEndpointInfo.backendUrl" target="_blank" rel="noreferrer">{{ previewEndpointInfo.backendUrl }}</a>
+          </span>
+          <span :class="previewEndpointInfo.fullstackReady ? 'chip chip-success' : 'chip chip-warn'">
+            {{ previewEndpointInfo.fullstackReady ? "Fullstack-ready" : "Fullstack checks pending" }}
+          </span>
+        </div>
       </div>
       <p v-else-if="!loading" class="empty">Run details are unavailable.</p>
     </section>
@@ -296,6 +309,17 @@
       <p v-else class="empty">No artifact links available for this run.</p>
     </section>
 
+    <section id="publish-diagnostics" class="panel">
+      <h2>Publish Diagnostics</h2>
+      <ul v-if="publishDiagnostics.length" class="artifact-list">
+        <li v-for="item in publishDiagnostics" :key="`${item.label}:${item.uri}`">
+          <a :href="buildArtifactHref(item.uri)" target="_blank" rel="noreferrer">{{ item.label }}</a>
+          <span class="artifact-source">{{ item.status || "unknown" }}</span>
+        </li>
+      </ul>
+      <p v-else class="empty">No publish diagnostics found yet.</p>
+    </section>
+
     <section id="timeline" class="panel">
       <h2>Timeline</h2>
       <ol v-if="events.length" class="timeline">
@@ -327,7 +351,10 @@ import {
   extractArtifactLinks,
   extractFailureReasons,
   extractFileDiffEntries,
+  extractPreviewEndpointInfo,
+  extractPublishDiagnostics,
   hasMigrationWarning,
+  PublishDiagnosticItem,
   RunEventItem,
   RunItem,
   statusChipClass,
@@ -403,6 +430,8 @@ const migrationFiles = computed(() => {
   return [...new Set(paths)];
 });
 const checksSummary = computed(() => summarizeChecks(checks.value));
+const previewEndpointInfo = computed(() => extractPreviewEndpointInfo(run.value, events.value));
+const publishDiagnostics = computed<PublishDiagnosticItem[]>(() => extractPublishDiagnostics(events.value));
 const canApproveRun = computed(() => Boolean(run.value && ["preview_ready", "needs_approval"].includes(run.value.status)));
 const canRejectRun = computed(() => Boolean(run.value && run.value.status !== "merged"));
 const canExpireRun = computed(() =>
@@ -453,6 +482,7 @@ const sectionLinks = [
   { id: "validation-checks", label: "Validation" },
   { id: "lifecycle-actions", label: "Actions" },
   { id: "artifacts", label: "Artifacts" },
+  { id: "publish-diagnostics", label: "Publish" },
   { id: "timeline", label: "Timeline" },
 ];
 
@@ -1029,6 +1059,18 @@ button:disabled {
   font-size: 0.84rem;
 }
 
+.preview-endpoints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  align-items: center;
+  font-size: 0.84rem;
+}
+
+.preview-endpoints a {
+  word-break: break-all;
+}
+
 .review-grid {
   display: grid;
   gap: 0.9rem;
@@ -1426,6 +1468,7 @@ button:disabled {
   }
 
   .summary-meta,
+  .preview-endpoints,
   .check-meta,
   .event-meta {
     gap: 0.5rem;

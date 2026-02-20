@@ -103,6 +103,18 @@ export interface SlotWaitingReason {
   queue_behavior: string | null;
 }
 
+export interface PreviewEndpointInfo {
+  frontendUrl: string | null;
+  backendUrl: string | null;
+  fullstackReady: boolean;
+}
+
+export interface PublishDiagnosticItem {
+  label: string;
+  uri: string;
+  status: string | null;
+}
+
 const artifactHintPattern = /(artifact|log|uri|url|report|output)/i;
 const diffHintPattern = /(diff|patch|file|change|modified|updated)/i;
 const diffPathKeyPattern = /(path|file|filename|name|target_file|old_path|new_path)/i;
@@ -221,6 +233,98 @@ export function extractArtifactLinks(
   });
 
   return links;
+}
+
+function latestPreviewPublishEvent(events: RunEventItem[]): RunEventItem | null {
+  let latest: RunEventItem | null = null;
+  for (const event of events) {
+    if (event.event_type !== "preview_publish_completed" && event.event_type !== "preview_publish_failed") {
+      continue;
+    }
+    if (!latest) {
+      latest = event;
+      continue;
+    }
+    const latestAt = Date.parse(latest.created_at);
+    const currentAt = Date.parse(event.created_at);
+    if (Number.isFinite(currentAt) && Number.isFinite(latestAt)) {
+      if (currentAt > latestAt || (currentAt === latestAt && event.id > latest.id)) {
+        latest = event;
+      }
+      continue;
+    }
+    if (event.id > latest.id) {
+      latest = event;
+    }
+  }
+  return latest;
+}
+
+function baseUrlFromHealth(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+  const normalized = value.trim();
+  if (normalized.endsWith("/health")) {
+    return normalized.slice(0, -"/health".length);
+  }
+  return normalized;
+}
+
+export function extractPreviewEndpointInfo(run: RunItem | null, events: RunEventItem[]): PreviewEndpointInfo {
+  const latest = latestPreviewPublishEvent(events);
+  const payload = latest?.payload ?? {};
+  const frontendFromPayload = baseUrlFromHealth(payload.frontend_health_url);
+  const backendFromPayload =
+    baseUrlFromHealth(payload.backend_health_url) ||
+    (typeof payload.slot_backend_url === "string" ? payload.slot_backend_url : null);
+  const frontendFallback = run?.slot_id ? previewUrlForSlot(run.slot_id) : null;
+  const stepStatus = payload.step_status;
+  const fullstackReady =
+    Boolean(
+      latest &&
+        latest.event_type === "preview_publish_completed" &&
+        typeof stepStatus === "object" &&
+        stepStatus !== null &&
+        "readiness_gate" in stepStatus &&
+        (stepStatus as Record<string, unknown>).readiness_gate === "passed",
+    ) && Boolean(run && ["preview_ready", "needs_approval", "approved", "merging", "deploying", "merged"].includes(run.status));
+
+  return {
+    frontendUrl: frontendFromPayload || frontendFallback,
+    backendUrl: backendFromPayload,
+    fullstackReady,
+  };
+}
+
+export function extractPublishDiagnostics(events: RunEventItem[]): PublishDiagnosticItem[] {
+  const latest = latestPreviewPublishEvent(events);
+  if (!latest || !latest.payload) {
+    return [];
+  }
+  const payload = latest.payload;
+  const diagnostics: PublishDiagnosticItem[] = [];
+  const status = latest.event_type === "preview_publish_completed" ? "passed" : "failed";
+  const fields: Array<{ key: string; label: string }> = [
+    { key: "artifact_uri", label: "Publish log" },
+    { key: "dependency_sync_artifact_uri", label: "Dependency sync log" },
+    { key: "migration_artifact_uri", label: "Migration log" },
+    { key: "backend_restart_artifact_uri", label: "Backend restart log" },
+    { key: "readiness_artifact_uri", label: "Readiness gate log" },
+  ];
+
+  for (const field of fields) {
+    const value = payload[field.key];
+    if (typeof value === "string" && value.trim()) {
+      diagnostics.push({
+        label: field.label,
+        uri: value.trim(),
+        status,
+      });
+    }
+  }
+
+  return diagnostics;
 }
 
 export function extractFailureReasons(
