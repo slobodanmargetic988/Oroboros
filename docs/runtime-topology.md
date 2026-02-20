@@ -53,6 +53,7 @@ Defined in `infra/caddy/Caddyfile`:
 
 Preview slot-specific provisioning/health contract:
 - `docs/preview-runtime-slots.md`
+- `docs/fullstack-preview-ops-runbook.md`
 - `scripts/preview-slots-provision.sh`
 - `scripts/preview-slots-health-check.sh`
 
