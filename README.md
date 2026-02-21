@@ -2,6 +2,9 @@
 
 This repository contains the initial runtime boundaries for the Codex Builder Core MVP.
 
+## Support This Project
+Sponsor on GitHub: [github.com/sponsors/slobodanmargetic988](https://github.com/sponsors/slobodanmargetic988)
+
 ## Layout
 - `frontend/`: Vue 3 + Vite + TypeScript UI scaffold.
 - `backend/`: FastAPI service scaffold with SQLAlchemy session setup + Alembic migrations.
@@ -49,3 +52,6 @@ This repository contains the initial runtime boundaries for the Codex Builder Co
    - `docs/slot-lease-manager-contract.md`
    - `docs/git-worktree-manager-contract.md`
    - `docs/local-development.md`
+
+## Sponsors
+<!-- sponsors --><!-- sponsors -->
