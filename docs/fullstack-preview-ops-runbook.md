@@ -75,11 +75,14 @@ curl -fsS http://127.0.0.1:3103/api/health
 On approval:
 1. Merge-gate checks run.
 2. Commit merges to `main`.
-3. Deploy hook runs backend reload command.
-4. Deploy health gate runs backend health check.
-5. Run transitions to `merged` only after deploy hook passes.
+3. Safe git-push hook runs (`manual` / `auto` / `dry-run` mode).
+4. Deploy hook runs backend reload command.
+5. Deploy health gate runs backend health check.
+6. Run transitions to `merged` only after push/deploy hooks pass.
 
 Failure behavior:
+- Push hook failure transitions run to `failed` with `DEPLOY_PUSH_FAILED`.
+- Push diagnostics artifact is attached (`deploy_git_push_log`).
 - Deploy hook failure transitions run to `failed` with `DEPLOY_HEALTHCHECK_FAILED`.
 - Deploy diagnostics artifact is attached (`deploy_backend_reload_log`).
 - Rollback guidance is included in run events.

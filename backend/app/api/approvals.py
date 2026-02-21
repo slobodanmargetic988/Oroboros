@@ -16,7 +16,12 @@ from app.domain.run_state_machine import (
 )
 from app.models import Approval, Run, RunArtifact
 from app.services.git_worktree_manager import cleanup_worktree, delete_run_branch
-from app.services.merge_gate import merge_run_commit_to_main, run_merge_gate_checks, run_post_merge_backend_reload
+from app.services.merge_gate import (
+    merge_run_commit_to_main,
+    run_merge_gate_checks,
+    run_post_merge_backend_reload,
+    run_post_merge_git_push,
+)
 from app.services.observability import current_trace_id, emit_structured_log
 from app.services.run_event_log import append_run_event
 from app.services.slot_lease_manager import release_slot_lease
@@ -258,6 +263,102 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
         audit_action="run.deploy.started",
     )
 
+    append_run_event(
+        db,
+        run_id=run.id,
+        event_type="deploy_git_push_started",
+        payload=_with_trace({"source": "deploy_push", "phase": "push_start"}, trace_id),
+        actor_id=payload.reviewer_id,
+        audit_action="run.push.started",
+    )
+    push_result = run_post_merge_git_push(run)
+    if push_result.artifact_uri:
+        db.add(
+            RunArtifact(
+                run_id=run.id,
+                artifact_type="deploy_git_push_log",
+                artifact_uri=push_result.artifact_uri,
+                metadata_json={
+                    "status": "passed" if push_result.passed else "failed",
+                    "detail": push_result.detail,
+                    "mode": push_result.push_mode,
+                    "remote": push_result.remote,
+                    "branch": push_result.branch,
+                    "dry_run": push_result.dry_run,
+                    "skipped": push_result.skipped,
+                    "rollback_guidance": push_result.rollback_guidance,
+                },
+            )
+        )
+
+    append_run_event(
+        db,
+        run_id=run.id,
+        event_type="deploy_git_push_finished",
+        payload=_with_trace(
+            {
+                "source": "deploy_push",
+                "status": "passed" if push_result.passed else "failed",
+                "detail": push_result.detail,
+                "mode": push_result.push_mode,
+                "remote": push_result.remote,
+                "branch": push_result.branch,
+                "dry_run": push_result.dry_run,
+                "skipped": push_result.skipped,
+                "push_artifact_uri": push_result.artifact_uri,
+                "rollback_guidance": push_result.rollback_guidance,
+            },
+            trace_id,
+        ),
+        actor_id=payload.reviewer_id,
+        audit_action=(
+            "run.push.skipped"
+            if push_result.passed and push_result.skipped
+            else ("run.push.completed" if push_result.passed else "run.push.failed")
+        ),
+    )
+
+    if not push_result.passed:
+        failed_from, failed_to = _transition_or_409(
+            run,
+            target=RunState.FAILED,
+            failure_reason=push_result.failure_reason or FailureReasonCode.DEPLOY_PUSH_FAILED,
+        )
+        _add_status_transition_event(
+            db,
+            run=run,
+            status_from=failed_from,
+            status_to=failed_to,
+            payload=_with_trace(
+                {
+                    "source": "deploy_push",
+                    "failure_reason_code": (
+                        push_result.failure_reason or FailureReasonCode.DEPLOY_PUSH_FAILED
+                    ).value,
+                    "detail": push_result.detail,
+                    "push_artifact_uri": push_result.artifact_uri,
+                    "rollback_guidance": push_result.rollback_guidance,
+                    "mode": push_result.push_mode,
+                    "remote": push_result.remote,
+                    "branch": push_result.branch,
+                    "dry_run": push_result.dry_run,
+                },
+                trace_id,
+            ),
+            actor_id=payload.reviewer_id,
+            audit_action="run.push.failed",
+        )
+        db.commit()
+        db.refresh(approval)
+        return ApprovalResponse(
+            id=approval.id,
+            run_id=approval.run_id,
+            reviewer_id=approval.reviewer_id,
+            decision=approval.decision,
+            reason=approval.reason,
+            created_at=approval.created_at,
+        )
+
     deploy_result = run_post_merge_backend_reload(run)
     if deploy_result.artifact_uri:
         db.add(
@@ -322,6 +423,7 @@ def approve_run(run_id: str, payload: ApproveRequest, db: Session = Depends(get_
                 "source": "merge_gate",
                 "phase": "merge_complete",
                 "merged_commit_sha": run.commit_sha,
+                "push_artifact_uri": push_result.artifact_uri,
                 "deploy_artifact_uri": deploy_result.artifact_uri,
             },
             trace_id,

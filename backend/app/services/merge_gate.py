@@ -47,6 +47,20 @@ class DeployReloadResult:
     healthcheck_command: list[str] | None = None
 
 
+@dataclass(frozen=True)
+class GitPushResult:
+    passed: bool
+    skipped: bool = False
+    failure_reason: FailureReasonCode | None = None
+    detail: str | None = None
+    artifact_uri: str | None = None
+    push_mode: str | None = None
+    remote: str | None = None
+    branch: str | None = None
+    dry_run: bool = False
+    rollback_guidance: str | None = None
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -118,6 +132,10 @@ def _run_command(command: list[str], *, cwd: Path, timeout_seconds: int) -> tupl
     except subprocess.TimeoutExpired as exc:
         output = f"{exc.stdout or ''}{exc.stderr or ''}"
         return None, True, output
+
+
+def _shell_command(parts: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in parts)
 
 
 def _resolve_deploy_command(env_name: str, default: str) -> list[str]:
@@ -337,6 +355,348 @@ def merge_run_commit_to_main(db: Session, run: Run) -> tuple[bool, str | None, s
     return True, merged_sha, None
 
 
+def run_post_merge_git_push(run: Run) -> GitPushResult:
+    push_mode_raw = os.getenv("MERGE_GATE_GIT_PUSH_MODE", "manual").strip().lower()
+    if push_mode_raw in {"manual", "off", "disabled", "none"}:
+        push_mode = "manual"
+        dry_run = False
+    elif push_mode_raw in {"auto", "enabled"}:
+        push_mode = "auto"
+        dry_run = False
+    elif push_mode_raw in {"dry-run", "dry_run", "dryrun"}:
+        push_mode = "dry-run"
+        dry_run = True
+    else:
+        return GitPushResult(
+            passed=False,
+            failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+            detail=f"invalid_push_mode:{push_mode_raw}",
+            push_mode=push_mode_raw or None,
+        )
+
+    remote = os.getenv("MERGE_GATE_GIT_PUSH_REMOTE", "origin").strip() or "origin"
+    branch = os.getenv("MERGE_GATE_GIT_PUSH_BRANCH", "main").strip() or "main"
+    timeout_raw = os.getenv("MERGE_GATE_GIT_PUSH_TIMEOUT_SECONDS", "120")
+    try:
+        timeout_seconds = max(15, int(timeout_raw))
+    except ValueError:
+        timeout_seconds = 120
+
+    artifact_dir = _artifact_root() / run.id / "deploy"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path = artifact_dir / "git-push.log"
+
+    if push_mode == "manual":
+        with artifact_path.open("w", encoding="utf-8") as log_handle:
+            log_handle.write(f"run_id={run.id}\n")
+            log_handle.write(f"commit_sha={run.commit_sha}\n")
+            log_handle.write(f"push_mode={push_mode}\n")
+            log_handle.write(f"remote={remote}\n")
+            log_handle.write(f"branch={branch}\n")
+            log_handle.write("result=push_skipped_manual_mode\n")
+        return GitPushResult(
+            passed=True,
+            skipped=True,
+            detail="push_skipped_manual_mode",
+            artifact_uri=str(artifact_path),
+            push_mode=push_mode,
+            remote=remote,
+            branch=branch,
+            dry_run=False,
+        )
+
+    repo_path = _repo_root()
+    if not (repo_path / ".git").exists():
+        return GitPushResult(
+            passed=False,
+            failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+            detail="repo_root_not_found",
+            push_mode=push_mode,
+            remote=remote,
+            branch=branch,
+            dry_run=dry_run,
+            artifact_uri=str(artifact_path),
+        )
+
+    def _run_git(args: list[str]) -> tuple[int | None, bool, str]:
+        return _run_command(["git", *args], cwd=repo_path, timeout_seconds=timeout_seconds)
+
+    def _log_command(
+        log_handle: Any,
+        *,
+        label: str,
+        command_parts: list[str],
+        exit_code: int | None,
+        timed_out: bool,
+        output: str,
+    ) -> None:
+        log_handle.write(f"[{label}]\n")
+        log_handle.write(f"command={_shell_command(command_parts)}\n")
+        log_handle.write(f"exit_code={exit_code}\n")
+        log_handle.write(f"timed_out={timed_out}\n")
+        log_handle.write(output)
+        if not output.endswith("\n"):
+            log_handle.write("\n")
+        log_handle.write("\n")
+        log_handle.flush()
+
+    local_ref = f"refs/heads/{branch}"
+    remote_ref = f"refs/remotes/{remote}/{branch}"
+    rollback_guidance: str | None = None
+
+    with artifact_path.open("w", encoding="utf-8") as log_handle:
+        log_handle.write(f"run_id={run.id}\n")
+        log_handle.write(f"commit_sha={run.commit_sha}\n")
+        log_handle.write(f"repo_path={repo_path}\n")
+        log_handle.write(f"push_mode={push_mode}\n")
+        log_handle.write(f"remote={remote}\n")
+        log_handle.write(f"branch={branch}\n")
+        log_handle.write(f"dry_run={dry_run}\n\n")
+
+        check_remote_cmd = ["git", "remote", "get-url", remote]
+        check_remote_exit, check_remote_timed_out, check_remote_output = _run_git(["remote", "get-url", remote])
+        _log_command(
+            log_handle,
+            label="check_remote",
+            command_parts=check_remote_cmd,
+            exit_code=check_remote_exit,
+            timed_out=check_remote_timed_out,
+            output=check_remote_output,
+        )
+        if check_remote_timed_out:
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail="remote_check_timeout",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+            )
+        if check_remote_exit != 0:
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail=f"remote_check_failed:exit_{check_remote_exit}",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+            )
+
+        local_head_cmd = ["git", "rev-parse", "--verify", local_ref]
+        local_head_exit, local_head_timed_out, local_head_output = _run_git(["rev-parse", "--verify", local_ref])
+        _log_command(
+            log_handle,
+            label="local_head",
+            command_parts=local_head_cmd,
+            exit_code=local_head_exit,
+            timed_out=local_head_timed_out,
+            output=local_head_output,
+        )
+        if local_head_timed_out:
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail="local_head_timeout",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+            )
+        if local_head_exit != 0:
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail=f"local_branch_missing:{branch}",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+            )
+        local_head = local_head_output.strip()
+        if run.commit_sha and local_head != run.commit_sha:
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail="local_branch_head_mismatch_run_commit",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+            )
+
+        fetch_cmd = ["git", "fetch", "--prune", remote, branch]
+        fetch_exit, fetch_timed_out, fetch_output = _run_git(["fetch", "--prune", remote, branch])
+        _log_command(
+            log_handle,
+            label="fetch_remote_branch",
+            command_parts=fetch_cmd,
+            exit_code=fetch_exit,
+            timed_out=fetch_timed_out,
+            output=fetch_output,
+        )
+        if fetch_timed_out:
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail="fetch_timeout",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+            )
+        if fetch_exit != 0:
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail=f"fetch_failed:exit_{fetch_exit}",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+            )
+
+        remote_head_cmd = ["git", "rev-parse", "--verify", remote_ref]
+        remote_head_exit, remote_head_timed_out, remote_head_output = _run_git(["rev-parse", "--verify", remote_ref])
+        _log_command(
+            log_handle,
+            label="remote_head",
+            command_parts=remote_head_cmd,
+            exit_code=remote_head_exit,
+            timed_out=remote_head_timed_out,
+            output=remote_head_output,
+        )
+        if remote_head_timed_out:
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail="remote_head_timeout",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+            )
+        if remote_head_exit != 0:
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail=f"remote_branch_missing:{remote}/{branch}",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+            )
+        remote_head = remote_head_output.strip()
+
+        ff_guard_cmd = ["git", "merge-base", "--is-ancestor", remote_ref, local_ref]
+        ff_guard_exit, ff_guard_timed_out, ff_guard_output = _run_git(
+            ["merge-base", "--is-ancestor", remote_ref, local_ref]
+        )
+        _log_command(
+            log_handle,
+            label="fast_forward_guard",
+            command_parts=ff_guard_cmd,
+            exit_code=ff_guard_exit,
+            timed_out=ff_guard_timed_out,
+            output=ff_guard_output,
+        )
+        if ff_guard_timed_out:
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail="fast_forward_guard_timeout",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+            )
+        if ff_guard_exit != 0:
+            rollback_guidance = (
+                f"Local {branch} is behind or diverged from {remote}/{branch}. "
+                "Fetch/rebase manually before retrying push."
+            )
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail="non_fast_forward_guard_failed",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+                rollback_guidance=rollback_guidance,
+            )
+
+        push_args = ["push", "--porcelain"]
+        if dry_run:
+            push_args.append("--dry-run")
+        push_args.extend([remote, f"{local_ref}:refs/heads/{branch}"])
+        push_cmd = ["git", *push_args]
+        push_exit, push_timed_out, push_output = _run_git(push_args)
+        _log_command(
+            log_handle,
+            label="git_push",
+            command_parts=push_cmd,
+            exit_code=push_exit,
+            timed_out=push_timed_out,
+            output=push_output,
+        )
+        if push_timed_out:
+            rollback_guidance = (
+                f"Inspect {artifact_path}. If local rollback is required, run: "
+                f"git -C {repo_path} switch {branch} && git -C {repo_path} reset --hard {remote_head}"
+            )
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail="git_push_timeout",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+                rollback_guidance=rollback_guidance,
+            )
+        if push_exit != 0:
+            rollback_guidance = (
+                f"Inspect {artifact_path}. If local rollback is required, run: "
+                f"git -C {repo_path} switch {branch} && git -C {repo_path} reset --hard {remote_head}"
+            )
+            return GitPushResult(
+                passed=False,
+                failure_reason=FailureReasonCode.DEPLOY_PUSH_FAILED,
+                detail=f"git_push_failed:exit_{push_exit}",
+                artifact_uri=str(artifact_path),
+                push_mode=push_mode,
+                remote=remote,
+                branch=branch,
+                dry_run=dry_run,
+                rollback_guidance=rollback_guidance,
+            )
+
+    return GitPushResult(
+        passed=True,
+        skipped=False,
+        detail="push_dry_run_ok" if dry_run else "push_ok",
+        artifact_uri=str(artifact_path),
+        push_mode=push_mode,
+        remote=remote,
+        branch=branch,
+        dry_run=dry_run,
+    )
+
+
 def run_post_merge_backend_reload(run: Run) -> DeployReloadResult:
     repo_path = _repo_root()
     if not (repo_path / ".git").exists():
@@ -371,10 +731,8 @@ def run_post_merge_backend_reload(run: Run) -> DeployReloadResult:
         log_handle.write(f"run_id={run.id}\n")
         log_handle.write(f"commit_sha={run.commit_sha}\n")
         log_handle.write(f"repo_path={repo_path}\n")
-        log_handle.write(f"reload_command={' '.join(shlex.quote(part) for part in reload_command)}\n")
-        log_handle.write(
-            f"healthcheck_command={' '.join(shlex.quote(part) for part in healthcheck_command)}\n\n"
-        )
+        log_handle.write(f"reload_command={_shell_command(reload_command)}\n")
+        log_handle.write(f"healthcheck_command={_shell_command(healthcheck_command)}\n\n")
         log_handle.flush()
 
         reload_exit, reload_timed_out, reload_output = _run_command(

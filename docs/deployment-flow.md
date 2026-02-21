@@ -88,3 +88,27 @@ Hook configuration:
 - `MERGE_GATE_DEPLOY_BACKEND_RELOAD_COMMAND` (default: `sudo systemctl reload-or-restart ouroboros-api`)
 - `MERGE_GATE_DEPLOY_BACKEND_HEALTHCHECK_COMMAND` (default: `curl -fsS http://127.0.0.1:8000/health`)
 - `MERGE_GATE_DEPLOY_TIMEOUT_SECONDS` (default: `120`)
+
+## Approval-time Safe Git Push Hook (MYO-53)
+
+After commit merge to local `main`, deploy phase runs guarded git-push logic before backend reload:
+1. Verify configured remote exists.
+2. Verify local target branch exists and matches merged commit.
+3. Fetch remote target branch.
+4. Enforce fast-forward guard (`remote/main` must be ancestor of local `main`).
+5. Push only `refs/heads/<branch>` to `refs/heads/<branch>` (or run `--dry-run`).
+6. Persist push diagnostics artifact (`deploy_git_push_log`) and run events.
+
+Operator controls:
+- `MERGE_GATE_GIT_PUSH_MODE`:
+  - `manual` (default) -> skip push but emit explicit skip event/artifact
+  - `auto` -> execute guarded push
+  - `dry-run` -> execute guarded validation + `git push --dry-run`
+- `MERGE_GATE_GIT_PUSH_REMOTE` (default: `origin`)
+- `MERGE_GATE_GIT_PUSH_BRANCH` (default: `main`)
+- `MERGE_GATE_GIT_PUSH_TIMEOUT_SECONDS` (default: `120`)
+
+Failure behavior:
+- Push failure transitions run to `failed` with `DEPLOY_PUSH_FAILED`.
+- Backend reload hook is not executed after push failure.
+- Failure payload includes rollback guidance and artifact URI for operator action.
