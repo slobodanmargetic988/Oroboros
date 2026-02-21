@@ -1,57 +1,53 @@
-# Ouroboros Monorepo Skeleton
+# Ouroboros
 
-This repository contains the initial runtime boundaries for the Codex Builder Core MVP.
+An app that builds itself. 
+Ouroboros is a full-stack monorepo for building and operating the Codex Builder Core MVP. It combines a web app, API, background worker, and host-level runtime automation into one deployable system.
+
+The project is structured to support local development, preview environments, and repeatable production-style deployments with operational guardrails.
+
+It is for now a fun project to showcase the vibecoding capabilites that can be achieved using agents and flow defined in my other project https://github.com/slobodanmargetic988/Agents
 
 ## Support This Project
 Sponsor on GitHub: [github.com/sponsors/slobodanmargetic988](https://github.com/sponsors/slobodanmargetic988)
 
-## Layout
-- `frontend/`: Vue 3 + Vite + TypeScript UI scaffold.
-- `backend/`: FastAPI service scaffold with SQLAlchemy session setup + Alembic migrations.
-- `worker/`: Runnable Python worker scaffold for background job processing.
-- `infra/`: Host-native runtime topology (`systemd` units + reverse proxy + web placeholders).
-- `scripts/`: Local developer helper scripts.
-- `docs/`: Technical notes and local operation guides.
+## What This Repo Includes
+- `frontend/`: Vue 3 + Vite + TypeScript user interface.
+- `backend/`: FastAPI service with SQLAlchemy + Alembic for API and data workflows.
+- `worker/`: Python worker runtime for background jobs and async processing.
+- `infra/`: Runtime topology and host integration (`systemd`, reverse proxy, web placeholders).
+- `scripts/`: Operational and developer automation scripts.
+- `docs/`: Architecture, contracts, runbooks, and deployment references.
+
+## Project Focus
+- Clear separation of runtime boundaries between UI, API, and worker components.
+- Deterministic deployment flow using commit-based release switching.
+- Preview/runtime validation through smoke and end-to-end checks.
+- Operations-first tooling for health checks, rollback handling, and runbook-driven maintenance.
 
 ## Quick Start
-1. Copy shared environment files:
+1. Create environment files:
    - `cp .env.example .env`
    - `cp backend/.env.example backend/.env`
    - `cp worker/.env.example worker/.env`
-2. Bootstrap DB schema and local seed data:
+2. Bootstrap database schema and seed data:
    - `./scripts/db-bootstrap.sh`
-3. Install runtime unit files and env templates:
+3. Install runtime unit files and environment templates:
    - `./scripts/systemd-install-runtime.sh`
-4. Deploy an exact commit with atomic release switch (creates `/srv/oroboros/current`):
+4. Deploy a specific commit (creates `/srv/oroboros/current`):
    - `./scripts/deploy.sh <commit_sha>`
-5. Start base runtime topology:
+5. Start the runtime topology:
    - `./scripts/runtime-up.sh`
-6. Verify core service health checks:
+6. Run service health checks:
    - `./scripts/runtime-health-check.sh`
-7. Run preview smoke/E2E harness (headless):
+7. Run preview smoke/E2E checks:
    - `./scripts/preview-smoke-e2e.sh --preview-url <preview_url>`
-8. Read topology and operation guides:
-   - `docs/public-user-guide.html`
-   - `docs/faq.html`
-   - `docs/developer-architecture-guide.html`
-   - `docs/configuration-guide.html`
-   - `docs/platform-prerequisites-guide.html`
-   - `docs/database-usage-guide.html`
+8. Continue with local development and operational docs:
+   - `docs/local-development.md`
    - `docs/runtime-topology.md`
    - `docs/deployment-flow.md`
-   - `docs/fullstack-preview-slot-runtime-contract.md`
    - `docs/fullstack-preview-ops-runbook.md`
-   - `docs/preview-runtime-slots.md`
    - `docs/preview-smoke-e2e-harness.md`
-   - `docs/integration-happy-path-validation.md`
-   - `docs/worker-security-guardrails.md`
-   - `docs/operator-incident-rollback-runbook.md`
    - `docs/mvp-go-live-checklist.md`
-   - `docs/db-bootstrap-and-migrations.md`
-   - `docs/run-state-machine-contract.md`
-   - `docs/slot-lease-manager-contract.md`
-   - `docs/git-worktree-manager-contract.md`
-   - `docs/local-development.md`
 
 ## Sponsors
 <!-- sponsors --><!-- sponsors -->
