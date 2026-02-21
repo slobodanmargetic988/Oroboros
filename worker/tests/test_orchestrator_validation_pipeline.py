@@ -199,6 +199,73 @@ class ValidationPipelineTests(unittest.TestCase):
             self.assertIn("run.test.completed", audit_actions)
             self.assertIn("run.edit.commit_created", audit_actions)
 
+    def test_slot_backend_integration_uses_slot_heartbeat_probe_without_run_creation(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_run_codex_command(**kwargs):
+            output_path: Path = kwargs["output_path"]
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text("slot-backend-integration", encoding="utf-8")
+            captured["command"] = kwargs["command"]
+            return CommandExecutionResult(
+                exit_code=0,
+                timed_out=False,
+                canceled=False,
+                lease_expired=False,
+                duration_seconds=0.05,
+                output_path=output_path,
+                output_excerpt=["slot-backend-integration"],
+            )
+
+        with tempfile.TemporaryDirectory() as artifact_root, patch.dict(
+            os.environ,
+            {"WORKER_ARTIFACT_ROOT": artifact_root},
+            clear=False,
+        ), patch.object(worker_orchestrator, "run_codex_command", side_effect=fake_run_codex_command):
+            orchestrator = worker_orchestrator.WorkerOrchestrator()
+
+            with self.session_factory() as db:
+                run = db.query(Run).filter(Run.id == self.run_id).first()
+                self.assertIsNotNone(run)
+                run.slot_id = "preview-1"
+                run.commit_sha = "deadbeef"
+
+                claimed = worker_orchestrator.ClaimedRun(
+                    run_id=run.id,
+                    prompt=run.prompt,
+                    slot_id="preview-1",
+                    worktree_path=Path(tempfile.gettempdir()) / "oroboros-test-worktree" / "preview-1",
+                )
+                result = orchestrator._run_slot_backend_integration_check(
+                    db=db,
+                    run=run,
+                    claimed=claimed,
+                    should_cancel=lambda: False,
+                    on_tick=lambda: None,
+                    trace_id="trace-slot-smoke",
+                    backend_health_url="http://127.0.0.1:8101/health",
+                )
+                db.commit()
+
+                self.assertTrue(result.ok)
+                command = captured.get("command")
+                self.assertIsInstance(command, list)
+                command_parts = list(command)
+                self.assertEqual(command_parts[:2], ["python3", "-c"])
+                self.assertIn("/api/slots/{slot_id}/heartbeat", command_parts[2])
+                self.assertNotIn("/api/runs", command_parts[2])
+                self.assertEqual(command_parts[3], "http://127.0.0.1:8101")
+                self.assertEqual(command_parts[4], "preview-1")
+                self.assertEqual(command_parts[5], run.id)
+
+                check = (
+                    db.query(ValidationCheck)
+                    .filter(ValidationCheck.run_id == run.id, ValidationCheck.check_name == "slot_backend_integration")
+                    .first()
+                )
+                self.assertIsNotNone(check)
+                self.assertEqual(check.status, "passed")
+
     def test_detected_changes_without_commit_marks_run_failed(self) -> None:
         with tempfile.TemporaryDirectory() as artifact_root, patch.dict(
             os.environ,

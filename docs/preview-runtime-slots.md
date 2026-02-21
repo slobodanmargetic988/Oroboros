@@ -60,7 +60,7 @@ Worker publish sequence for fullstack readiness:
 3. Slot-safe migrations on slot preview DB.
 4. Slot backend restart.
 5. Readiness gate (`FE /health` + `BE /health`) before `preview_ready`.
-6. Slot backend integration smoke check (`POST /api/runs` + readback) with slot-tagged artifact.
+6. Slot backend integration smoke check (`POST /api/slots/{slot}/heartbeat` + `GET /api/slots` readback) with slot-tagged artifact.
 
 ## Dev Fallback (Direct Port Mode)
 
