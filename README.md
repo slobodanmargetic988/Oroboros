@@ -1,5 +1,7 @@
 # Ouroboros
 
+[![Support me](https://img.shields.io/badge/Support%20me-GitHub%20Sponsors-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/slobodanmargetic988)
+
 An app that builds itself. 
 Ouroboros is a full-stack monorepo for building and operating the Codex Builder Core MVP. It combines a web app, API, background worker, and host-level runtime automation into one deployable system.
 
